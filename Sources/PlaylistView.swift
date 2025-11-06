@@ -9,7 +9,13 @@ struct PlaylistView: View {
     @State private var tapCount = 0
     @State private var lastTrackCount = 0
     @State private var expandedArtists: Set<String> = []
-    @State private var showGrouped = false // Default to flat view
+    @State private var showGrouped = false // Default to flat view, loaded from UserDefaults on appear
+    
+    // Resizing state
+    @Binding var playlistSize: CGSize
+    @State private var isDragging = false
+    @State private var dragStart: CGPoint = .zero
+    @State private var hasLoadedGroupedState = false
     
     // Group tracks by artist
     var groupedTracks: [(artist: String, tracks: [(index: Int, track: Track)])] {
@@ -208,6 +214,8 @@ struct PlaylistView: View {
                     // Toggle between flat and grouped view
                     PlaylistButton(text: showGrouped ? "FLAT" : "GRP") {
                         showGrouped.toggle()
+                        // Save the preference
+                        UserDefaults.standard.set(showGrouped, forKey: "playlistShowGrouped")
                         if showGrouped {
                             // Auto-expand all artists when switching to grouped view
                             let allArtists = Set(playlistManager.tracks.map { $0.artist })
@@ -232,8 +240,19 @@ struct PlaylistView: View {
             }
             .frame(height: 20)
             .background(WinampColors.mainBg)
+            
+            // Resize handle at bottom edge
+            ResizeHandle(isDragging: $isDragging, playlistSize: $playlistSize)
         }
         .background(WinampColors.mainBgDark)
+        .frame(width: playlistSize.width, height: playlistSize.height)
+        .onAppear {
+            // Load saved grouped/flat view preference
+            if !hasLoadedGroupedState {
+                showGrouped = UserDefaults.standard.bool(forKey: "playlistShowGrouped")
+                hasLoadedGroupedState = true
+            }
+        }
     }
     
     var totalDuration: TimeInterval {
@@ -480,4 +499,66 @@ class PlaylistRowClickView: NSView {
         return self
     }
 }
+
+// Resize handle for bottom edge (vertical only)
+struct ResizeHandle: View {
+    @Binding var isDragging: Bool
+    @Binding var playlistSize: CGSize
+    @State private var startSize: CGSize = .zero
+    
+    var body: some View {
+        ZStack {
+            // Background area that's draggable - full width, small height
+            Rectangle()
+                .fill(Color.gray.opacity(0.001))
+                .frame(height: 12)
+            
+            // Visual indicator (horizontal lines for vertical resize)
+            HStack(spacing: 2) {
+                ForEach(0..<3) { i in
+                    Rectangle()
+                        .fill(i % 2 == 0 ? WinampColors.buttonDark : WinampColors.buttonLight)
+                        .frame(width: 8, height: 1)
+                }
+            }
+            .padding(.bottom, 2)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if !isDragging {
+                        // Store the starting size on first change
+                        startSize = playlistSize
+                        isDragging = true
+                    }
+                    // Calculate new height based on drag from start position (width stays fixed at 450)
+                    let newHeight = max(150, startSize.height + value.translation.height)
+                    playlistSize = CGSize(width: 450, height: newHeight)
+                }
+                .onEnded { _ in
+                    isDragging = false
+                    // Save only the height to UserDefaults
+                    UserDefaults.standard.set(playlistSize.height, forKey: "playlistHeight")
+                }
+        )
+        .cursor(NSCursor.resizeUpDown)
+    }
+}
+
+// Custom cursor modifier
+extension View {
+    func cursor(_ cursor: NSCursor) -> some View {
+        self.onContinuousHover { phase in
+            switch phase {
+            case .active:
+                cursor.push()
+            case .ended:
+                NSCursor.pop()
+            }
+        }
+    }
+}
+
 

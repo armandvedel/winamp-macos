@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var showVisualization = false
     @State private var contentHeight: CGFloat = 450
     @State private var visualizerFullscreen = false
+    @State private var playlistSize: CGSize = CGSize(width: 450, height: 250)
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -22,8 +23,7 @@ struct ContentView: View {
                         MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization)
                         
                         if showPlaylist {
-                            PlaylistView()
-                                .frame(width: 450, height: 250)
+                            PlaylistView(playlistSize: $playlistSize)
                         }
                         
                         if showEqualizer {
@@ -55,6 +55,8 @@ struct ContentView: View {
         .onAppear {
             setupWindow()
             loadStartupSound()
+            loadPlaylistSize()
+            setupWindowNotifications()
         }
         .onChange(of: isShadeMode) { newValue in
             // Force window to resize when toggling shade mode
@@ -165,6 +167,29 @@ struct ContentView: View {
         
         // Don't force a specific size - let it adjust based on content
         window.setContentSize(window.contentView?.fittingSize ?? NSSize(width: 450, height: 400))
+    }
+    
+    private func loadPlaylistSize() {
+        // Load saved playlist height from UserDefaults (width is fixed at 450)
+        let savedHeight = UserDefaults.standard.double(forKey: "playlistHeight")
+        
+        if savedHeight > 0 {
+            playlistSize = CGSize(width: 450, height: savedHeight)
+        }
+    }
+    
+    private func setupWindowNotifications() {
+        // Listen for window miniaturize events
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didMiniaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // Hide visualization when window is minimized
+            if showVisualization {
+                showVisualization = false
+            }
+        }
     }
 }
 

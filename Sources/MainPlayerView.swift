@@ -1326,6 +1326,8 @@ enum VisualizationPreset: Int, CaseIterable {
     case waveformTunnel = 5
     case kaleidoscope = 6
     case lfoMorph = 7
+    case nebulaGalaxy = 8
+    case starfieldFlight = 9
     
     var name: String {
         switch self {
@@ -1337,6 +1339,8 @@ enum VisualizationPreset: Int, CaseIterable {
         case .waveformTunnel: return "Waveform Tunnel"
         case .kaleidoscope: return "Kaleidoscope"
         case .lfoMorph: return "LFO Morph"
+        case .nebulaGalaxy: return "Nebula Galaxy"
+        case .starfieldFlight: return "Starfield Flight"
         }
     }
 }
@@ -1348,6 +1352,7 @@ struct MilkdropVisualizerView: View {
     @State private var trackChangeTime: Date = Date()
     @State private var currentPreset: VisualizationPreset = .spiralGalaxy
     @State private var presetChangeTime: Date = Date()
+    @Binding var isFullscreen: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1375,6 +1380,16 @@ struct MilkdropVisualizerView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 4)
+                
+                // Fullscreen button
+                Button(action: toggleFullscreen) {
+                    Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+                .help("Toggle Fullscreen (F)")
             }
             .padding(.horizontal, 8)
             .frame(height: 14)
@@ -1401,10 +1416,55 @@ struct MilkdropVisualizerView: View {
                 )
             }
             .background(Color.black)
+            .background(
+                DoubleClickHandler {
+                    toggleFullscreen()
+                }
+                .allowsHitTesting(true)
+            )
         }
         .background(Color.black)
+        .background(FullscreenKeyHandler(isFullscreen: $isFullscreen, onToggle: toggleFullscreen))
         .onChange(of: playlistManager.currentTrack?.id) { _ in
             trackChangeTime = Date()
+        }
+    }
+    
+    private func toggleFullscreen() {
+        DispatchQueue.main.async {
+            guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }),
+                  let screen = window.screen ?? NSScreen.main else { 
+                return 
+            }
+            
+            if !self.isFullscreen {
+                // Store original frame before going fullscreen
+                UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: "originalWindowFrame")
+                
+                // Toggle state first
+                self.isFullscreen = true
+                
+                // Small delay to let SwiftUI update the layout
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Go fullscreen - cover entire screen
+                    let screenFrame = screen.frame
+                    window.setFrame(screenFrame, display: true, animate: true)
+                    window.level = .statusBar // Above everything
+                }
+            } else {
+                // Toggle state first
+                self.isFullscreen = false
+                
+                // Small delay to let SwiftUI update the layout
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Restore original size and position
+                    if let frameString = UserDefaults.standard.string(forKey: "originalWindowFrame") {
+                        let originalFrame = NSRectFromString(frameString)
+                        window.setFrame(originalFrame, display: true, animate: true)
+                    }
+                    window.level = .normal
+                }
+            }
         }
     }
     
@@ -1422,6 +1482,85 @@ struct MilkdropVisualizerView: View {
         let prevIndex = (currentIndex - 1 + allPresets.count) % allPresets.count
         currentPreset = allPresets[prevIndex]
         presetChangeTime = Date()
+    }
+}
+
+// Key handler for escape key to exit fullscreen and F key to toggle
+struct FullscreenKeyHandler: NSViewRepresentable {
+    @Binding var isFullscreen: Bool
+    var onToggle: () -> Void
+    
+    func makeNSView(context: Context) -> NSView {
+        let view = KeyHandlerView()
+        view.onEscape = {
+            if isFullscreen {
+                onToggle()
+            }
+        }
+        view.onFullscreenToggle = {
+            onToggle()
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+class KeyHandlerView: NSView {
+    var onEscape: (() -> Void)?
+    var onFullscreenToggle: (() -> Void)?
+    
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { true }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
+    }
+    
+    override func layout() {
+        super.layout()
+        // Ensure we become first responder when layout changes (like going fullscreen)
+        window?.makeFirstResponder(self)
+    }
+    
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // Escape key
+            onEscape?()
+        } else if event.keyCode == 3 { // F key (keyCode 3)
+            onFullscreenToggle?()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+}
+
+// Double-click handler view
+struct DoubleClickHandler: NSViewRepresentable {
+    let onDoubleClick: () -> Void
+    
+    func makeNSView(context: Context) -> DoubleClickView {
+        let view = DoubleClickView()
+        view.onDoubleClick = onDoubleClick
+        return view
+    }
+    
+    func updateNSView(_ nsView: DoubleClickView, context: Context) {}
+}
+
+class DoubleClickView: NSView {
+    var onDoubleClick: (() -> Void)?
+    
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            onDoubleClick?()
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
+    
+    override var acceptsFirstResponder: Bool {
+        return true
     }
 }
 
@@ -1484,6 +1623,12 @@ struct MilkdropCanvas: View {
             
         case .lfoMorph:
             drawLFOMorph(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+            
+        case .nebulaGalaxy:
+            drawNebulaGalaxy(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+            
+        case .starfieldFlight:
+            drawStarfieldFlight(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
         }
     }
     
@@ -1859,6 +2004,333 @@ struct MilkdropCanvas: View {
             let color = Color(hue: hue, saturation: 0.9, brightness: 0.8)
             
             context.stroke(path, with: .color(color.opacity(0.6)), lineWidth: 3)
+        }
+    }
+    
+    // MARK: - Nebula Galaxy Visualization
+    private func drawNebulaGalaxy(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        
+        // Draw background star field
+        drawStarField(context: &context, size: size, time: time)
+        
+        // Draw nebula clouds
+        drawNebulaClouds(context: &context, centerX: centerX, centerY: centerY, size: size, time: time, intensity: Double(avgLevel))
+        
+        // Draw galaxy core
+        drawGalaxyCore(context: &context, centerX: centerX, centerY: centerY, time: time, intensity: Double(avgLevel))
+        
+        // Draw spiral arms with stars
+        drawGalaxySpiralArms(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+        
+        // Draw dust lanes
+        drawDustLanes(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+    }
+    
+    private func drawStarField(context: inout GraphicsContext, size: CGSize, time: Double) {
+        // Background stars
+        for i in 0..<300 {
+            let seed = Double(i) * 57.3
+            let x = (sin(seed) * 0.5 + 0.5) * size.width
+            let y = (cos(seed * 1.3) * 0.5 + 0.5) * size.height
+            
+            let twinkle = (sin(time * 2 + seed) + 1) * 0.5
+            let brightness = 0.3 + twinkle * 0.4
+            let starSize = (sin(seed * 2.7) + 1) * 0.5 + 0.5
+            
+            let color = Color.white.opacity(brightness)
+            let rect = CGRect(x: x - starSize, y: y - starSize, width: starSize * 2, height: starSize * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(color))
+        }
+    }
+    
+    private func drawNebulaClouds(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double, intensity: Double) {
+        // Create flowing nebula clouds
+        for layer in 0..<3 {
+            let layerOffset = Double(layer) * 0.3
+            
+            for i in 0..<80 {
+                let angle = Double(i) / 80.0 * .pi * 2 + time * 0.1 * Double(layer + 1)
+                let distance = 100 + Double(i) * 6 + sin(time * 0.5 + Double(i) * 0.3) * 40
+                let x = centerX + cos(angle) * distance
+                let y = centerY + sin(angle) * distance * 0.7  // Flatten for galaxy shape
+                
+                let spectrumIndex = i % audioPlayer.spectrumData.count
+                let level = audioPlayer.spectrumData[spectrumIndex]
+                
+                let cloudSize = 15 + CGFloat(level) * 30 + CGFloat(layer) * 10
+                
+                // Nebula colors - pink, purple, blue
+                let hue = 0.7 + layerOffset * 0.15 + sin(time * 0.2 + Double(i) * 0.1) * 0.1
+                let saturation = 0.7 + Double(level) * 0.3
+                let brightness = 0.3 + Double(level) * 0.5 + intensity * 0.3
+                
+                let color = Color(hue: hue, saturation: saturation, brightness: brightness)
+                
+                var cloudContext = context
+                cloudContext.addFilter(.blur(radius: 15))
+                
+                let rect = CGRect(x: x - cloudSize/2, y: y - cloudSize/2, width: cloudSize, height: cloudSize)
+                cloudContext.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.4)))
+            }
+        }
+    }
+    
+    private func drawGalaxyCore(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, time: Double, intensity: Double) {
+        // Bright galactic core
+        let coreSize: CGFloat = 60 + CGFloat(intensity) * 40
+        
+        // Outer glow layers
+        for i in 0..<5 {
+            let scale = CGFloat(5 - i) / 5.0
+            let size = coreSize * scale * 1.5
+            let brightness = 0.2 + scale * 0.6 + intensity * 0.2
+            
+            var glowContext = context
+            glowContext.addFilter(.blur(radius: 20))
+            
+            let color = Color(hue: 0.05, saturation: 0.9, brightness: brightness)
+            let rect = CGRect(x: centerX - size/2, y: centerY - size/2, width: size, height: size)
+            glowContext.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.6)))
+        }
+        
+        // Bright center
+        let centerColor = Color(hue: 0.1, saturation: 0.7, brightness: 1.0)
+        let centerRect = CGRect(x: centerX - coreSize/4, y: centerY - coreSize/4, width: coreSize/2, height: coreSize/2)
+        context.fill(Path(ellipseIn: centerRect), with: .color(centerColor.opacity(0.9)))
+    }
+    
+    private func drawGalaxySpiralArms(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        // Multiple spiral arms with individual stars
+        let numArms = 4
+        let rotation = time * 0.15
+        
+        for arm in 0..<numArms {
+            let armAngleOffset = Double(arm) * (.pi * 2 / Double(numArms))
+            
+            for i in 0..<150 {
+                let t = Double(i) / 150.0
+                let spiralAngle = t * .pi * 4 + rotation + armAngleOffset
+                let spiralDistance = t * min(size.width, size.height) * 0.45
+                
+                let spectrumIndex = (i * audioPlayer.spectrumData.count) / 150
+                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                
+                // Add some randomness to star positions
+                let noise = sin(Double(i) * 13.7 + Double(arm) * 7.3) * 10
+                
+                let x = centerX + cos(spiralAngle) * (spiralDistance + noise)
+                let y = centerY + sin(spiralAngle) * (spiralDistance + noise) * 0.7
+                
+                let starSize = (1.0 - t * 0.5) * 3 + CGFloat(level) * 4
+                let brightness = (1.0 - t * 0.3) + Double(level) * 0.5
+                
+                // Stars in arms - blue-white
+                let color = Color(hue: 0.55 + t * 0.1, saturation: 0.4, brightness: brightness)
+                
+                let rect = CGRect(x: x - starSize/2, y: y - starSize/2, width: starSize, height: starSize)
+                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.8)))
+                
+                // Add occasional bright stars
+                if i % 10 == 0 {
+                    var glowContext = context
+                    glowContext.addFilter(.blur(radius: 3))
+                    let glowRect = CGRect(x: x - starSize, y: y - starSize, width: starSize * 2, height: starSize * 2)
+                    glowContext.fill(Path(ellipseIn: glowRect), with: .color(color.opacity(0.5)))
+                }
+            }
+        }
+    }
+    
+    private func drawDustLanes(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        // Dark dust lanes between spiral arms
+        let rotation = time * 0.15
+        
+        for lane in 0..<4 {
+            let laneAngle = Double(lane) * (.pi * 2 / 4.0) + rotation + .pi / 4
+            
+            var path = Path()
+            var isFirst = true
+            
+            for i in 0..<100 {
+                let t = Double(i) / 100.0
+                let angle = laneAngle + t * .pi * 4
+                let distance = t * min(size.width, size.height) * 0.4 + 50
+                
+                let wave = sin(t * .pi * 8 + time) * 15
+                
+                let x = centerX + cos(angle) * (distance + wave)
+                let y = centerY + sin(angle) * (distance + wave) * 0.7
+                
+                if isFirst {
+                    path.move(to: CGPoint(x: x, y: y))
+                    isFirst = false
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+            
+            var dustContext = context
+            dustContext.addFilter(.blur(radius: 8))
+            
+            let dustColor = Color(red: 0.1, green: 0.05, blue: 0.05)
+            dustContext.stroke(path, with: .color(dustColor.opacity(0.6)), lineWidth: 20)
+        }
+    }
+    
+    // MARK: - Starfield Flight Visualization
+    private func drawStarfieldFlight(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        
+        // Calculate rotation angle based on frequency bands
+        // Low frequencies (bass) rotate left, high frequencies rotate right
+        let spectrumCount = audioPlayer.spectrumData.count
+        let lowEnd = spectrumCount / 3
+        let highStart = (spectrumCount * 2) / 3
+        
+        let lowFreqs = audioPlayer.spectrumData.prefix(lowEnd)
+        let highFreqs = audioPlayer.spectrumData.suffix(spectrumCount - highStart)
+        
+        let lowAvg = lowFreqs.reduce(0, +) / Float(max(lowFreqs.count, 1))
+        let highAvg = highFreqs.reduce(0, +) / Float(max(highFreqs.count, 1))
+        
+        // Rotation based on amplitude difference between low and high frequencies
+        let rotationAngle = (Double(lowAvg) - Double(highAvg)) * 1.5
+        
+        // Speed based on overall amplitude - stars come at you faster with louder music
+        let baseSpeed = 3.0 + Double(avgLevel) * 6.0
+        
+        // Draw massive stream of stars flying directly towards you
+        for i in 0..<1500 {
+            let seed = Double(i) * 37.3
+            
+            // Random position in 3D space - fill entire view cone
+            let angle = seed * 2.5
+            let radius = (sin(seed * 3.7) + 1) * 600 + 50
+            let initX = cos(angle) * radius
+            let initY = sin(angle) * radius
+            
+            // Z position - stars distributed throughout depth
+            let initZ = ((seed * 80).truncatingRemainder(dividingBy: 3000)) + 50
+            
+            // Z position moves forward - stars coming AT you
+            let zProgress = (time * baseSpeed * 250).truncatingRemainder(dividingBy: 3000)
+            let z = ((initZ - zProgress + 3000).truncatingRemainder(dividingBy: 3000)) + 10
+            
+            // Skip if star is too close or behind
+            guard z > 5 else { continue }
+            
+            // Apply rotation to the entire starfield
+            let rotatedX = initX * cos(rotationAngle) - initY * sin(rotationAngle)
+            let rotatedY = initX * sin(rotationAngle) + initY * cos(rotationAngle)
+            
+            // Perspective projection - stars expand as they approach
+            let perspective = 1000.0 / z
+            let screenX = centerX + rotatedX * perspective
+            let screenY = centerY + rotatedY * perspective
+            
+            // Skip if off screen (with padding for trails)
+            guard screenX > -100 && screenX < size.width + 100 && 
+                  screenY > -100 && screenY < size.height + 100 else { continue }
+            
+            // Star size increases dramatically as it approaches
+            let starSize = CGFloat(perspective * 3)
+            let brightness = min(1.0, perspective * 0.7)
+            
+            // Motion blur - trail points toward center (coming at you)
+            let directionX = screenX - centerX
+            let directionY = screenY - centerY
+            let distance = sqrt(directionX * directionX + directionY * directionY)
+            
+            let trailLength = starSize * 4 * CGFloat(baseSpeed) / 5
+            let trailEndX = screenX - (directionX / distance) * trailLength
+            let trailEndY = screenY - (directionY / distance) * trailLength
+            
+            // Star color - spectrum-reactive
+            let spectrumIndex = i % audioPlayer.spectrumData.count
+            let level = audioPlayer.spectrumData[spectrumIndex]
+            
+            let hue = 0.55 + Double(level) * 0.35
+            let saturation = 0.15 + Double(level) * 0.6
+            let starColor = Color(hue: hue, saturation: saturation, brightness: brightness)
+            
+            // Draw motion trail - thicker for closer stars
+            var path = Path()
+            path.move(to: CGPoint(x: trailEndX, y: trailEndY))
+            path.addLine(to: CGPoint(x: screenX, y: screenY))
+            
+            let trailWidth = max(1.5, starSize * 0.7)
+            context.stroke(path, with: .color(starColor.opacity(0.7)), lineWidth: trailWidth)
+            
+            // Draw star point
+            let rect = CGRect(x: screenX - starSize/2, y: screenY - starSize/2, width: starSize, height: starSize)
+            context.fill(Path(ellipseIn: rect), with: .color(starColor.opacity(0.9)))
+            
+            // Bright glow for closer stars
+            if perspective > 2.0 {
+                var glowContext = context
+                glowContext.addFilter(.blur(radius: starSize * 0.6))
+                let glowSize = starSize * 2.5
+                let glowRect = CGRect(x: screenX - glowSize/2, y: screenY - glowSize/2, width: glowSize, height: glowSize)
+                glowContext.fill(Path(ellipseIn: glowRect), with: .color(starColor.opacity(0.5)))
+            }
+        }
+        
+        // Add extra dense star field in the distance
+        for i in 0..<800 {
+            let seed = Double(i) * 91.7 + 5000
+            
+            let angle = seed * 3.1
+            let radius = (sin(seed * 2.3) + 1) * 400 + 100
+            let initX = cos(angle) * radius
+            let initY = sin(angle) * radius
+            
+            let initZ = 2000 + ((seed * 50).truncatingRemainder(dividingBy: 1000))
+            let zProgress = (time * baseSpeed * 150).truncatingRemainder(dividingBy: 1000)
+            let z = ((initZ - zProgress + 1000).truncatingRemainder(dividingBy: 1000)) + 2000
+            
+            let rotatedX = initX * cos(rotationAngle * 0.5) - initY * sin(rotationAngle * 0.5)
+            let rotatedY = initX * sin(rotationAngle * 0.5) + initY * cos(rotationAngle * 0.5)
+            
+            let perspective = 1000.0 / z
+            let screenX = centerX + rotatedX * perspective
+            let screenY = centerY + rotatedY * perspective
+            
+            guard screenX > 0 && screenX < size.width && 
+                  screenY > 0 && screenY < size.height else { continue }
+            
+            let starSize = CGFloat(perspective * 2)
+            let brightness = min(0.6, perspective * 0.4)
+            
+            let color = Color.white.opacity(brightness)
+            let rect = CGRect(x: screenX - starSize/2, y: screenY - starSize/2, width: starSize, height: starSize)
+            context.fill(Path(ellipseIn: rect), with: .color(color))
+        }
+        
+        // Add nebula clouds in the distance
+        drawSpaceNebula(context: &context, centerX: centerX, centerY: centerY, size: size, time: time, rotation: rotationAngle)
+    }
+    
+    private func drawSpaceNebula(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double, rotation: Double) {
+        // Distant colorful nebula clouds that drift slowly
+        for i in 0..<5 {
+            let seed = Double(i) * 127.3
+            let angle = seed + time * 0.05
+            let distance = 150 + sin(time * 0.1 + seed) * 50
+            
+            let x = centerX + cos(angle + rotation * 0.2) * distance
+            let y = centerY + sin(angle + rotation * 0.2) * distance * 0.6
+            
+            let cloudSize: CGFloat = 80 + CGFloat(i) * 20
+            let hue = (seed / 500.0 + time * 0.02).truncatingRemainder(dividingBy: 1.0)
+            let color = Color(hue: hue, saturation: 0.7, brightness: 0.4)
+            
+            var cloudContext = context
+            cloudContext.addFilter(.blur(radius: 30))
+            cloudContext.opacity = 0.3
+            
+            let rect = CGRect(x: x - cloudSize/2, y: y - cloudSize/2, width: cloudSize, height: cloudSize)
+            cloudContext.fill(Path(ellipseIn: rect), with: .color(color))
         }
     }
 }

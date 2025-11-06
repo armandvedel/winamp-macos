@@ -9,44 +9,48 @@ struct ContentView: View {
     @State private var isShadeMode = false
     @State private var showVisualization = false
     @State private var contentHeight: CGFloat = 450
+    @State private var visualizerFullscreen = false
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Main Winamp player (left side)
-            VStack(spacing: 0) {
-                if isShadeMode {
-                    ShadeView(isShadeMode: $isShadeMode)
-                } else {
-                    MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization)
-                    
-                    if showPlaylist {
-                        PlaylistView()
-                            .frame(width: 450, height: 250)
-                    }
-                    
-                    if showEqualizer {
-                        EqualizerView()
-                            .frame(width: 450, height: 200)
+            // Main Winamp player (left side) - hide when visualization is fullscreen
+            if !visualizerFullscreen {
+                VStack(spacing: 0) {
+                    if isShadeMode {
+                        ShadeView(isShadeMode: $isShadeMode)
+                    } else {
+                        MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization)
+                        
+                        if showPlaylist {
+                            PlaylistView()
+                                .frame(width: 450, height: 250)
+                        }
+                        
+                        if showEqualizer {
+                            EqualizerView()
+                                .frame(width: 450, height: 200)
+                        }
                     }
                 }
+                .frame(width: 450)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: HeightPreferenceKey.self, value: geo.size.height)
+                    }
+                )
             }
-            .frame(width: 450)
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(key: HeightPreferenceKey.self, value: geo.size.height)
-                }
-            )
             
             // Milkdrop visualization window (right side)
             if showVisualization {
-                MilkdropVisualizerView()
-                    .frame(width: 600, height: max(contentHeight, 450))
+                MilkdropVisualizerView(isFullscreen: $visualizerFullscreen)
+                    .frame(width: visualizerFullscreen ? nil : 600, height: visualizerFullscreen ? nil : max(contentHeight, 450))
+                    .frame(maxWidth: visualizerFullscreen ? .infinity : nil, maxHeight: visualizerFullscreen ? .infinity : nil)
             }
         }
         .onPreferenceChange(HeightPreferenceKey.self) { height in
             contentHeight = height
         }
-        .fixedSize(horizontal: true, vertical: true)
+        .fixedSize(horizontal: !visualizerFullscreen, vertical: !visualizerFullscreen)
         .background(Color.black)
         .onAppear {
             setupWindow()
@@ -96,9 +100,13 @@ struct ContentView: View {
         window.styleMask.remove(.titled)
         window.styleMask.remove(.closable)
         window.styleMask.remove(.miniaturizable)
-        window.styleMask.remove(.resizable)
+        // Keep resizable for fullscreen to work
+        window.styleMask.insert(.resizable)
         window.styleMask.insert(.borderless)
         window.styleMask.insert(.fullSizeContentView)
+        
+        // Allow fullscreen mode
+        window.collectionBehavior = [.fullScreenPrimary, .fullScreenAllowsTiling]
         
         // Make title bar completely transparent and hide all buttons
         window.titlebarAppearsTransparent = true

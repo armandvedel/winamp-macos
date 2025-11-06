@@ -19,18 +19,31 @@ struct MainPlayerView: View {
                 HStack(spacing: 6) {
                     // LEFT: Spectrum visualizer with time above it
                     VStack(spacing: 0) {
-                        // Time display with play/pause indicator
+                        // Time display with play/pause indicator - aligned right
                         HStack(spacing: 4) {
-                            Text(audioPlayer.isPlaying ? "II" : "▶")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                .foregroundColor(WinampColors.displayText)
+                            Spacer()
+                            
+                            // Play/Pause button
+                            Button(action: {
+                                if audioPlayer.isPlaying {
+                                    audioPlayer.pause()
+                                } else {
+                                    audioPlayer.play()
+                                }
+                            }) {
+                                Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(WinampColors.displayText)
+                                    .frame(width: 16, height: 16)
+                            }
+                            .buttonStyle(.plain)
                             
                             Text(formatTime(audioPlayer.currentTime))
                                 .font(.system(size: 22, weight: .bold, design: .monospaced))
                                 .foregroundColor(WinampColors.displayText)
                                 .shadow(color: WinampColors.displayText.opacity(0.6), radius: 3, x: 0, y: 0)
                         }
-                        .frame(maxWidth: .infinity, alignment: .center)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                         .background(Color.black)
@@ -97,19 +110,8 @@ struct MainPlayerView: View {
                         }
                         .padding(.horizontal, 4)
                         
-                        // Sliders row with EQ/PL buttons
+                        // Volume slider and EQ/PL buttons
                         HStack(spacing: 4) {
-                            // Position slider (orange/yellow)
-                            ModernSlider(
-                                value: Binding(
-                                    get: { audioPlayer.currentTime },
-                                    set: { audioPlayer.seek(to: $0) }
-                                ),
-                                range: 0...max(audioPlayer.duration, 1),
-                                color: Color(red: 0.9, green: 0.7, blue: 0.2)
-                            )
-                            .frame(width: 90, height: 20)
-                            
                             // Volume slider (green)
                             ModernSlider(
                                 value: Binding(
@@ -120,6 +122,8 @@ struct MainPlayerView: View {
                                 color: WinampColors.displayText
                             )
                             .frame(width: 70, height: 20)
+                            
+                            Spacer()
                             
                             // EQ and PL buttons with indicator lights
                             HStack(spacing: 2) {

@@ -28,7 +28,7 @@ struct ContentView: View {
                         
                         if showEqualizer {
                             EqualizerView()
-                                .frame(width: 450, height: 200)
+                                .frame(width: 450, height: 250)
                         }
                     }
                 }
@@ -54,6 +54,7 @@ struct ContentView: View {
         .background(Color.black)
         .onAppear {
             setupWindow()
+            loadStartupSound()
         }
         .onChange(of: isShadeMode) { newValue in
             // Force window to resize when toggling shade mode
@@ -91,6 +92,27 @@ struct ContentView: View {
         DispatchQueue.main.async {
             for window in NSApplication.shared.windows {
                 configureWindow(window)
+            }
+        }
+    }
+    
+    private func loadStartupSound() {
+        // Load the startup.mp3 from the app bundle
+        guard let startupURL = Bundle.main.url(forResource: "startup", withExtension: "mp3") else {
+            print("❌ Could not find startup.mp3 in bundle")
+            return
+        }
+        
+        print("🎵 Loading startup sound from: \(startupURL.path)")
+        
+        // Create a track for the startup sound
+        let startupTrack = Track(url: startupURL)
+        
+        // Play it directly without adding to playlist
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            audioPlayer.loadTrack(startupTrack)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                audioPlayer.play()
             }
         }
     }

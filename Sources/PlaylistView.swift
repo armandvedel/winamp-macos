@@ -7,6 +7,7 @@ struct PlaylistView: View {
     @State private var selectedTrack: Track.ID?
     @State private var tapTimer: Timer?
     @State private var tapCount = 0
+    @State private var lastTrackCount = 0
     
     var body: some View {
         VStack(spacing: 0) {
@@ -36,31 +37,43 @@ struct PlaylistView: View {
             )
             
             // Playlist content - classic green on black
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(playlistManager.tracks.enumerated()), id: \.element.id) { index, track in
-                        ClassicPlaylistRow(
-                            track: track,
-                            index: index + 1,
-                            isPlaying: index == playlistManager.currentIndex,
-                            isSelected: track.id == selectedTrack
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            handleTap(index: index, trackId: track.id)
-                        }
-                        .contextMenu {
-                            Button("Play") {
-                                playlistManager.playTrack(at: index)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(playlistManager.tracks.enumerated()), id: \.element.id) { index, track in
+                            ClassicPlaylistRow(
+                                track: track,
+                                index: index + 1,
+                                isPlaying: index == playlistManager.currentIndex,
+                                isSelected: track.id == selectedTrack
+                            )
+                            .id(track.id)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                handleTap(index: index, trackId: track.id)
                             }
-                            Button("Remove") {
-                                playlistManager.removeTrack(at: index)
+                            .contextMenu {
+                                Button("Play") {
+                                    playlistManager.playTrack(at: index)
+                                }
+                                Button("Remove") {
+                                    playlistManager.removeTrack(at: index)
+                                }
                             }
                         }
                     }
                 }
+                .background(WinampColors.playlistBg)
+                .onChange(of: playlistManager.tracks.count) { newCount in
+                    // When new tracks are added, scroll to show the last one
+                    if newCount > lastTrackCount && !playlistManager.tracks.isEmpty {
+                        withAnimation {
+                            proxy.scrollTo(playlistManager.tracks.last?.id, anchor: .bottom)
+                        }
+                    }
+                    lastTrackCount = newCount
+                }
             }
-            .background(WinampColors.playlistBg)
             .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                 handleDrop(providers: providers)
                 return true
@@ -118,12 +131,18 @@ struct PlaylistView: View {
                         // Select all
                     }
                     
-                    PlaylistButton(text: "MISC") {
-                        // Misc menu
+                    Button(action: {
+                        playlistManager.saveM3UPlaylist()
+                    }) {
+                        Text("SAVE")
+                            .font(.system(size: 7, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .frame(width: 30, height: 18)
                     }
+                    .buttonStyle(.plain)
                     
-                    PlaylistButton(text: "LIST") {
-                        // List menu
+                    PlaylistButton(text: "CLR") {
+                        playlistManager.clearPlaylist()
                     }
                 }
             }
@@ -189,11 +208,11 @@ struct ClassicPlaylistRow: View {
     
     var body: some View {
         HStack(spacing: 2) {
-            // Index with dot
-            Text("\(index).")
+            // Index with dot (4-digit zero-padded)
+            Text(String(format: "%04d.", index))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(isPlaying ? WinampColors.playlistCurrentTrack : WinampColors.playlistText)
-                .frame(width: 20, alignment: .trailing)
+                .frame(width: 35, alignment: .trailing)
             
             // Artist - Title
             Text("\(track.artist) - \(track.title)")

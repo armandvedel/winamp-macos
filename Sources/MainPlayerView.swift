@@ -225,16 +225,56 @@ struct MainPlayerView: View {
                         }
                     }
                     
-                    // Visualization toggle button
+                    // Visualization toggle button with icon
                     Button(action: { showVisualization.toggle() }) {
-                        Text("VIS")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(showVisualization ? .black : .white)
-                            .frame(width: 32, height: 28)
-                            .background(
+                        ZStack {
+                            // Background with 3D effect
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color(red: 0.22, green: 0.25, blue: 0.32))
+                            
+                            // Recessed effect when active
+                            if showVisualization {
+                                // Dark inset shadow for recessed look
                                 RoundedRectangle(cornerRadius: 3)
-                                    .fill(showVisualization ? WinampColors.displayText : Color(red: 0.22, green: 0.25, blue: 0.32))
-                            )
+                                    .stroke(Color.black.opacity(0.5), lineWidth: 1)
+                                    .blur(radius: 1)
+                                    .offset(x: 1, y: 1)
+                                
+                                Rectangle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.black.opacity(0.3),
+                                                Color.clear
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .cornerRadius(3)
+                            } else {
+                                // Raised effect when inactive (3D bevel)
+                                VStack(spacing: 0) {
+                                    Rectangle()
+                                        .fill(Color.white.opacity(0.15))
+                                        .frame(height: 1)
+                                    Spacer()
+                                    Rectangle()
+                                        .fill(Color.black.opacity(0.3))
+                                        .frame(height: 1)
+                                }
+                                .cornerRadius(3)
+                            }
+                            
+                            // Winamp icon
+                            Image("WinampIcon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 18, height: 18)
+                                .opacity(showVisualization ? 0.6 : 1.0)
+                                .offset(x: showVisualization ? 1 : 0, y: showVisualization ? 1 : 0)
+                        }
+                        .frame(width: 32, height: 28)
                     }
                     .buttonStyle(.plain)
                 }

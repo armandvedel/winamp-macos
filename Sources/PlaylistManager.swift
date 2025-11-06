@@ -72,7 +72,11 @@ class PlaylistManager: ObservableObject {
     }
     
     func playTrack(at index: Int) {
-        guard index >= 0 && index < tracks.count else { return }
+        guard index >= 0 && index < tracks.count else { 
+            print("❌ playTrack failed: index=\(index), tracks.count=\(tracks.count)")
+            return 
+        }
+        print("🎵 Playing track at index \(index): \(tracks[index].title)")
         currentIndex = index
         let track = tracks[index]
         AudioPlayer.shared.loadTrack(track)
@@ -86,6 +90,7 @@ class PlaylistManager: ObservableObject {
     func next() {
         guard !tracks.isEmpty else { return }
         let nextIndex = (currentIndex + 1) % tracks.count
+        print("🔵 Next button: currentIndex=\(currentIndex), tracks.count=\(tracks.count), nextIndex=\(nextIndex)")
         playTrack(at: nextIndex)
     }
     
@@ -100,17 +105,127 @@ class PlaylistManager: ObservableObject {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [.mp3, .init(filenameExtension: "flac")].compactMap { $0 }
+        panel.allowedContentTypes = [.mp3, .wav, .init(filenameExtension: "flac"), .init(filenameExtension: "m3u")].compactMap { $0 }
         
         panel.begin { [weak self] response in
             guard let self = self else { return }
             if response == .OK {
                 // Create tracks on background queue to avoid blocking
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let newTracks = panel.urls.map { Track(url: $0) }
+                    var newTracks: [Track] = []
+                    for url in panel.urls {
+                        if url.pathExtension.lowercased() == "m3u" {
+                            // Load M3U playlist
+                            if let m3uTracks = self.loadM3UPlaylist(from: url) {
+                                newTracks.append(contentsOf: m3uTracks)
+                            }
+                        } else {
+                            // Regular audio file
+                            newTracks.append(Track(url: url))
+                        }
+                    }
                     // Add tracks on main queue
                     self.addTracks(newTracks)
                 }
+            }
+        }
+    }
+    
+    func loadM3UPlaylist(from url: URL) -> [Track]? {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+            print("❌ Failed to read M3U file: \(url.path)")
+            return nil
+        }
+        
+        var tracks: [Track] = []
+        let lines = content.components(separatedBy: .newlines)
+        let playlistDirectory = url.deletingLastPathComponent()
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            // Skip empty lines and comments (except #EXTM3U header)
+            guard !trimmed.isEmpty && !trimmed.hasPrefix("#") else { continue }
+            
+            // Handle both absolute and relative paths
+            let trackURL: URL
+            if trimmed.hasPrefix("/") || trimmed.hasPrefix("file://") {
+                // Absolute path
+                trackURL = URL(fileURLWithPath: trimmed.replacingOccurrences(of: "file://", with: ""))
+            } else {
+                // Relative path - resolve relative to M3U file location
+                trackURL = playlistDirectory.appendingPathComponent(trimmed)
+            }
+            
+            // Check if file exists and is a supported format
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: trackURL.path) {
+                let ext = trackURL.pathExtension.lowercased()
+                if ext == "mp3" || ext == "flac" || ext == "wav" {
+                    tracks.append(Track(url: trackURL))
+                }
+            } else {
+                print("⚠️ Track not found: \(trackURL.path)")
+            }
+        }
+        
+        print("📄 Loaded \(tracks.count) tracks from M3U: \(url.lastPathComponent)")
+        return tracks
+    }
+    
+    func saveM3UPlaylist() {
+        print("🎯 SAVE button clicked! Tracks count: \(tracks.count)")
+        
+        guard !tracks.isEmpty else {
+            print("⚠️ Cannot save empty playlist - add some tracks first!")
+            return
+        }
+        
+        print("✅ Playlist has tracks, showing save dialog...")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { 
+                print("❌ Self is nil")
+                return 
+            }
+            
+            print("📝 Creating NSSavePanel...")
+            
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.init(filenameExtension: "m3u")].compactMap { $0 }
+            panel.nameFieldStringValue = "playlist.m3u"
+            panel.title = "Save Playlist As"
+            panel.message = "Choose a name and location for your playlist"
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            panel.showsTagField = false
+            
+            print("📝 Opening save dialog with runModal()...")
+            
+            // Use runModal for immediate display
+            let response = panel.runModal()
+            
+            print("📝 Dialog closed with response: \(response.rawValue)")
+            
+            if response == .OK, let url = panel.url {
+                print("💾 Saving playlist to: \(url.path)")
+                
+                var content = "#EXTM3U\n"
+                for track in self.tracks {
+                    // Use absolute paths for reliability
+                    if let trackUrl = track.url {
+                        content += trackUrl.path + "\n"
+                    }
+                }
+                
+                do {
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                    print("✅ Successfully saved playlist with \(self.tracks.count) tracks")
+                } catch {
+                    print("❌ Failed to save playlist: \(error.localizedDescription)")
+                }
+            } else {
+                print("❌ Save cancelled by user")
             }
         }
     }
@@ -129,20 +244,49 @@ class PlaylistManager: ObservableObject {
     }
     
     private func addTracksFromFolder(_ folder: URL) {
-        let fileManager = FileManager.default
-        guard let enumerator = fileManager.enumerator(at: folder, includingPropertiesForKeys: nil) else {
-            return
-        }
+        print("📁 Scanning folder: \(folder.path)")
         
-        var newTracks: [Track] = []
-        for case let fileURL as URL in enumerator {
-            let ext = fileURL.pathExtension.lowercased()
-            if ext == "mp3" || ext == "flac" {
-                newTracks.append(Track(url: fileURL))
+        // Do the file scanning on a background thread to avoid blocking
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            
+            let fileManager = FileManager.default
+            guard let enumerator = fileManager.enumerator(
+                at: folder, 
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else {
+                print("❌ Failed to create enumerator for folder")
+                return
             }
+            
+            var fileURLs: [URL] = []
+            
+            // First, collect all audio file URLs (fast)
+            for case let fileURL as URL in enumerator {
+                // Check if it's a regular file
+                guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
+                      let isRegularFile = resourceValues.isRegularFile,
+                      isRegularFile else {
+                    continue
+                }
+                
+                let ext = fileURL.pathExtension.lowercased()
+                if ext == "mp3" || ext == "flac" || ext == "wav" {
+                    fileURLs.append(fileURL)
+                }
+            }
+            
+            print("📁 Found \(fileURLs.count) audio files, creating tracks...")
+            
+            // Create tracks from URLs (slower - loads metadata)
+            let newTracks = fileURLs.map { Track(url: $0) }
+            
+            print("✅ Created \(newTracks.count) track objects")
+            
+            // Add tracks on main queue
+            self.addTracks(newTracks)
         }
-        
-        addTracks(newTracks)
     }
 }
 

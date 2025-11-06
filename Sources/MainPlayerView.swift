@@ -1382,6 +1382,7 @@ enum VisualizationPreset: Int, CaseIterable {
         case .lfoMorph: return "LFO Morph"
         case .nebulaGalaxy: return "Nebula Galaxy"
         case .starfieldFlight: return "Starfield Flight"
+        case .starWarsCrawl: return "Star Wars Crawl"
         }
     }
 }
@@ -1617,8 +1618,13 @@ struct MilkdropCanvas: View {
     var body: some View {
         Canvas { context, size in
             drawVisualization(context: &context, size: size, time: time)
-            drawTrackTitle(context: &context, size: size, time: time)
-            drawLyrics(context: &context, size: size, time: time)
+            
+            // Only show track title and regular lyrics if NOT in Star Wars mode
+            if preset != .starWarsCrawl {
+                drawTrackTitle(context: &context, size: size, time: time)
+                drawLyrics(context: &context, size: size, time: time)
+            }
+            
             drawPresetChange(context: &context, size: size, time: time)
         }
     }
@@ -1671,6 +1677,9 @@ struct MilkdropCanvas: View {
             
         case .starfieldFlight:
             drawStarfieldFlight(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+            
+        case .starWarsCrawl:
+            drawStarWarsCrawl(context: &context, size: size, time: time)
         }
     }
     
@@ -2401,6 +2410,210 @@ struct MilkdropCanvas: View {
             
             let rect = CGRect(x: x - cloudSize/2, y: y - cloudSize/2, width: cloudSize, height: cloudSize)
             cloudContext.fill(Path(ellipseIn: rect), with: .color(color))
+        }
+    }
+    
+    private func drawStarWarsCrawl(context: inout GraphicsContext, size: CGSize, time: Double) {
+        // Deep space background
+        let bgGradient = Gradient(colors: [
+            Color.black,
+            Color(red: 0.0, green: 0.0, blue: 0.1)
+        ])
+        context.fill(
+            Path(CGRect(origin: .zero, size: size)),
+            with: .linearGradient(bgGradient, startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height))
+        )
+        
+        // Draw moving starfield - stars coming toward viewer
+        let centerX = size.width / 2
+        let centerY = size.height * 0.3
+        
+        for i in 0..<300 {
+            let seed = Double(i) * 73.5
+            
+            // Stars positioned in 3D space
+            let angle = seed * 2.5
+            let radius = (sin(seed * 3.1) + 1) * 400 + 50
+            let initX = cos(angle) * radius
+            let initY = sin(angle) * radius
+            
+            // Z position - depth into space
+            let initZ = ((seed * 60).truncatingRemainder(dividingBy: 2000)) + 100
+            let zProgress = (time * 200).truncatingRemainder(dividingBy: 2000)
+            let z = ((initZ - zProgress + 2000).truncatingRemainder(dividingBy: 2000)) + 100
+            
+            guard z > 10 else { continue }
+            
+            // Perspective projection
+            let perspective = 800.0 / z
+            let screenX = centerX + initX * perspective
+            let screenY = centerY + initY * perspective
+            
+            // Skip if off screen
+            guard screenX > -20 && screenX < size.width + 20 && 
+                  screenY > -20 && screenY < size.height + 20 else { continue }
+            
+            let starSize = CGFloat(perspective * 2)
+            let brightness = min(1.0, perspective * 0.8)
+            
+            let rect = CGRect(x: screenX - starSize/2, y: screenY - starSize/2, width: starSize, height: starSize)
+            context.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(brightness)))
+        }
+        
+        // Draw grid lines on the plane for depth effect
+        drawPerspectiveGrid(context: &context, size: size, time: time)
+        
+        // Get lyrics lines
+        let allLyrics = audioPlayer.currentLyrics
+        guard !allLyrics.isEmpty else {
+            // Show placeholder text if no lyrics
+            drawCrawlText(context: &context, size: size, lines: [
+                "Lyrics will appear here",
+                "when music with lyrics is playing"
+            ], scrollOffset: time * 30)
+            return
+        }
+        
+        // Find current lyric and surrounding context
+        let currentTime = audioPlayer.currentTime
+        var displayLines: [String] = []
+        
+        // Get current and upcoming lyrics
+        var currentIndex = 0
+        for (index, lyric) in allLyrics.enumerated() {
+            if lyric.timestamp <= currentTime {
+                currentIndex = index
+            }
+        }
+        
+        let startIndex = max(0, currentIndex - 2)
+        let endIndex = min(allLyrics.count - 1, currentIndex + 8)
+        
+        for i in startIndex...endIndex {
+            displayLines.append(allLyrics[i].text)
+            if i < endIndex {
+                displayLines.append("") // Add spacing between lines
+            }
+        }
+        
+        // Calculate scroll offset - auto-scroll with music time
+        let baseScroll = time * 50
+        let scrollOffset = baseScroll.truncatingRemainder(dividingBy: Double(displayLines.count * 80 + 500))
+        
+        drawCrawlText(context: &context, size: size, lines: displayLines, scrollOffset: scrollOffset)
+    }
+    
+    private func drawPerspectiveGrid(context: inout GraphicsContext, size: CGSize, time: Double) {
+        let centerX = size.width / 2
+        let vanishingY = size.height * 0.3
+        
+        // Draw horizontal grid lines receding into distance
+        for i in 0..<12 {
+            let z = Double(i) * 150 + ((time * 100).truncatingRemainder(dividingBy: 150))
+            let perspective = 1000.0 / (z + 100)
+            let y = vanishingY + (size.height - vanishingY) * CGFloat(perspective)
+            
+            guard y > vanishingY && y < size.height else { continue }
+            
+            let lineWidth = perspective * 150
+            let opacity = min(0.2, perspective * 0.3)
+            
+            var path = Path()
+            path.move(to: CGPoint(x: centerX - lineWidth, y: y))
+            path.addLine(to: CGPoint(x: centerX + lineWidth, y: y))
+            
+            context.stroke(path, with: .color(Color.cyan.opacity(opacity)), lineWidth: 1)
+        }
+        
+        // Draw vertical grid lines converging to center
+        for i in -4...4 {
+            guard i != 0 else { continue }
+            let xOffset = Double(i) * 60
+            
+            var path = Path()
+            path.move(to: CGPoint(x: centerX + xOffset, y: size.height))
+            path.addLine(to: CGPoint(x: centerX, y: vanishingY))
+            
+            context.stroke(path, with: .color(Color.cyan.opacity(0.15)), lineWidth: 1)
+        }
+    }
+    
+    private func drawCrawlText(context: inout GraphicsContext, size: CGSize, lines: [String], scrollOffset: Double) {
+        // Text on flat plane receding into distance
+        let centerX = size.width / 2
+        let vanishingY = size.height * 0.25 // Vanishing point on horizon
+        let planeStartY = size.height // Bottom of screen (closest point)
+        
+        // Calculate the Z position offset based on scroll
+        let zOffset = scrollOffset * 2
+        
+        for (index, line) in lines.enumerated() {
+            // Each line has a Z position (depth into the scene)
+            let lineZ = Double(index) * 150 + 200 - zOffset
+            
+            // Skip if too far (past vanishing point)
+            guard lineZ > 10 else { continue }
+            
+            // Skip if too close (behind viewer)
+            guard lineZ < 3000 else { continue }
+            
+            // Calculate perspective
+            let perspective = 1000.0 / lineZ
+            
+            // Y position on screen based on perspective (farther = higher on screen toward vanishing point)
+            let yPosition = vanishingY + (planeStartY - vanishingY) * CGFloat(perspective)
+            
+            // Skip if off screen
+            guard yPosition > vanishingY - 20 && yPosition < size.height + 50 else { continue }
+            
+            // Text size based on distance - larger range for more dramatic effect
+            let fontSize = 10 + perspective * 50
+            
+            // Width scale (text gets narrower as it recedes)
+            let widthScale = perspective
+            
+            // Height scale (gets flatter/compressed as it recedes - flat plane effect)
+            // More compression for stronger Star Wars effect
+            let heightScale = 0.2 + perspective * 0.6
+            
+            // Opacity - fade out in distance
+            let opacity = min(1.0, perspective * 1.5)
+            
+            // Create text with italic style for Star Wars look
+            let text = Text(line)
+                .font(.system(size: fontSize, weight: .bold, design: .rounded))
+                .italic()
+                .foregroundColor(.yellow)
+            
+            let resolved = context.resolve(text)
+            
+            // Apply transformations for flat plane perspective with italic skew
+            var textContext = context
+            textContext.opacity = opacity
+            
+            // Move to position
+            textContext.translateBy(x: centerX, y: yPosition)
+            
+            // Apply perspective scaling
+            textContext.scaleBy(x: widthScale, y: heightScale)
+            
+            // Apply skew/shear for additional italic effect (Star Wars trademark look)
+            // This makes the text lean back into the distance
+            let skewAmount = -0.2 + (1.0 - perspective) * 0.15
+            textContext.concatenate(CGAffineTransform(a: 1, b: 0, c: skewAmount, d: 1, tx: 0, ty: 0))
+            
+            textContext.translateBy(x: -centerX, y: -yPosition)
+            
+            // Draw glow
+            for i in 0..<3 {
+                var glowContext = textContext
+                glowContext.opacity = opacity * (0.2 - Double(i) * 0.05)
+                let glowOffset = Double(i + 1) * 2.0
+                glowContext.draw(resolved, at: CGPoint(x: centerX, y: yPosition + glowOffset), anchor: .center)
+            }
+            
+            // Draw main text
+            textContext.draw(resolved, at: CGPoint(x: centerX, y: yPosition), anchor: .center)
         }
     }
 }

@@ -75,28 +75,26 @@ struct PlaylistView: View {
                                 // Tracks under this artist (if expanded)
                                 if expandedArtists.contains(group.artist) {
                                     ForEach(group.tracks, id: \.track.id) { indexedTrack in
-                                        ClassicPlaylistRow(
-                                            track: indexedTrack.track,
-                                            index: indexedTrack.index + 1,
-                                            isPlaying: indexedTrack.index == playlistManager.currentIndex,
-                                            isSelected: indexedTrack.track.id == selectedTrack
-                                        )
-                                        .id(indexedTrack.track.id)
-                                        .overlay(
-                                            PlaylistRowClickHandler(
-                                                onSingleClick: {
-                                                    print("🎵 Single-click - selecting track at index: \(indexedTrack.index)")
-                                                    selectedTrack = indexedTrack.track.id
-                                                },
-                                                onDoubleClick: {
-                                                    print("🎵 Double-click! Playing track at index: \(indexedTrack.index)")
-                                                    playlistManager.playTrack(at: indexedTrack.index)
-                                                }
+                                        Button(action: {
+                                            // Single click action
+                                            selectedTrack = indexedTrack.track.id
+                                            
+                                            // Check if already selected - if so, play it (double-click behavior)
+                                            if indexedTrack.track.id == selectedTrack {
+                                                playlistManager.playTrack(at: indexedTrack.index)
+                                            }
+                                        }) {
+                                            ClassicPlaylistRow(
+                                                track: indexedTrack.track,
+                                                index: indexedTrack.index + 1,
+                                                isPlaying: indexedTrack.index == playlistManager.currentIndex,
+                                                isSelected: indexedTrack.track.id == selectedTrack
                                             )
-                                        )
+                                        }
+                                        .buttonStyle(.plain)
+                                        .id(indexedTrack.track.id)
                                         .contextMenu {
                                             Button("Play") {
-                                                print("🎵 Playing track at index: \(indexedTrack.index)")
                                                 playlistManager.playTrack(at: indexedTrack.index)
                                             }
                                             Button("Remove") {
@@ -109,28 +107,26 @@ struct PlaylistView: View {
                         } else {
                             // Flat view - all tracks
                             ForEach(Array(playlistManager.tracks.enumerated()), id: \.element.id) { index, track in
-                                ClassicPlaylistRow(
-                                    track: track,
-                                    index: index + 1,
-                                    isPlaying: index == playlistManager.currentIndex,
-                                    isSelected: track.id == selectedTrack
-                                )
-                                .id(track.id)
-                                .overlay(
-                                    PlaylistRowClickHandler(
-                                        onSingleClick: {
-                                            print("🎵 Single-click - selecting track at index: \(index)")
-                                            selectedTrack = track.id
-                                        },
-                                        onDoubleClick: {
-                                            print("🎵 Double-click! Playing track at index: \(index)")
-                                            playlistManager.playTrack(at: index)
-                                        }
+                                Button(action: {
+                                    // Single click action
+                                    selectedTrack = track.id
+                                    
+                                    // Check if already selected - if so, play it (double-click behavior)
+                                    if track.id == selectedTrack {
+                                        playlistManager.playTrack(at: index)
+                                    }
+                                }) {
+                                    ClassicPlaylistRow(
+                                        track: track,
+                                        index: index + 1,
+                                        isPlaying: index == playlistManager.currentIndex,
+                                        isSelected: track.id == selectedTrack
                                     )
-                                )
+                                }
+                                .buttonStyle(.plain)
+                                .id(track.id)
                                 .contextMenu {
                                     Button("Play") {
-                                        print("🎵 Playing track at index: \(index)")
                                         playlistManager.playTrack(at: index)
                                     }
                                     Button("Remove") {

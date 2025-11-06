@@ -26,33 +26,30 @@ struct ClassicVisualizerView: View {
                     let x = CGFloat(col) * (barWidth + barSpacing)
                     let y = size.height - barHeight
                     
-                    // Draw main bar - color based on HEIGHT position, not gradient within bar
+                    // Draw main bar with gradient based on VERTICAL POSITION
+                    // Each part of the bar gets colored based on where it is vertically
                     let barRect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
                     
-                    // Determine color based on how high the bar reaches in the OVERALL spectrum
-                    let heightPercent = barHeight / size.height
-                    let barColor: Color
+                    // Create gradient colors based on vertical position thresholds
+                    // Green (0-30%), Yellow-Green (30-50%), Yellow (50-70%), Orange (70-85%), Red (85-100%)
+                    let gradient = Gradient(stops: [
+                        .init(color: Color(red: 0.0, green: 1.0, blue: 0.0), location: 0.0),    // Bottom: Green
+                        .init(color: Color(red: 0.5, green: 1.0, blue: 0.0), location: 0.30),   // 30%: Yellow-Green
+                        .init(color: Color(red: 1.0, green: 1.0, blue: 0.0), location: 0.50),   // 50%: Yellow
+                        .init(color: Color(red: 1.0, green: 0.65, blue: 0.0), location: 0.70),  // 70%: Orange
+                        .init(color: Color(red: 1.0, green: 0.0, blue: 0.0), location: 0.85),   // 85%: Red
+                        .init(color: Color(red: 1.0, green: 0.0, blue: 0.0), location: 1.0)     // Top: Red
+                    ])
                     
-                    if heightPercent < 0.30 {
-                        // Bottom 30% - Green only
-                        barColor = Color(red: 0.0, green: 1.0, blue: 0.0)
-                    } else if heightPercent < 0.50 {
-                        // 30-50% - Yellow-green
-                        barColor = Color(red: 0.5, green: 1.0, blue: 0.0)
-                    } else if heightPercent < 0.70 {
-                        // 50-70% - Yellow
-                        barColor = Color(red: 1.0, green: 1.0, blue: 0.0)
-                    } else if heightPercent < 0.85 {
-                        // 70-85% - Orange
-                        barColor = Color(red: 1.0, green: 0.5, blue: 0.0)
-                    } else {
-                        // 85-100% - Red (only the loudest!)
-                        barColor = Color(red: 1.0, green: 0.0, blue: 0.0)
-                    }
-                    
+                    // Apply gradient from bottom to top of the ENTIRE spectrum area
+                    // This way each bar shows the gradient color for its vertical position
                     context.fill(
                         Path(barRect),
-                        with: .color(barColor)
+                        with: .linearGradient(
+                            gradient,
+                            startPoint: CGPoint(x: x, y: size.height),  // Bottom of spectrum
+                            endPoint: CGPoint(x: x, y: 0)                // Top of spectrum
+                        )
                     )
                     
                     // Draw peak indicator (grey bar at the top)

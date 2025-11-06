@@ -62,7 +62,6 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     func loadTrack(_ track: Track) {
-        print("=== Loading track: \(track.title) ===")
         
         // Execute on audio queue to ensure serialization
         audioQueue.async { [weak self] in

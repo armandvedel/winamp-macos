@@ -72,11 +72,8 @@ class PlaylistManager: ObservableObject {
     }
     
     func playTrack(at index: Int) {
-        guard index >= 0 && index < tracks.count else { 
-            print("❌ playTrack failed: index=\(index), tracks.count=\(tracks.count)")
-            return 
-        }
-        print("🎵 Playing track at index \(index): \(tracks[index].title)")
+        guard index >= 0 && index < tracks.count else { return }
+        
         currentIndex = index
         let track = tracks[index]
         AudioPlayer.shared.loadTrack(track)
@@ -90,7 +87,6 @@ class PlaylistManager: ObservableObject {
     func next() {
         guard !tracks.isEmpty else { return }
         let nextIndex = (currentIndex + 1) % tracks.count
-        print("🔵 Next button: currentIndex=\(currentIndex), tracks.count=\(tracks.count), nextIndex=\(nextIndex)")
         playTrack(at: nextIndex)
     }
     

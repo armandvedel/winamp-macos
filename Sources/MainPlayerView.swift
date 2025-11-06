@@ -6,6 +6,7 @@ struct MainPlayerView: View {
     @Binding var showPlaylist: Bool
     @Binding var showEqualizer: Bool
     @Binding var isShadeMode: Bool
+    @Binding var showVisualization: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -120,10 +121,10 @@ struct MainPlayerView: View {
                             )
                             .frame(width: 70, height: 20)
                             
-                            // EQ and PL buttons
+                            // EQ and PL buttons with indicator lights
                             HStack(spacing: 2) {
-                                ModernToggleButton(text: "EQ", isOn: $showEqualizer)
-                                ModernToggleButton(text: "PL", isOn: $showPlaylist)
+                                ModernToggleButtonWithLight(text: "EQ", isOn: $showEqualizer)
+                                ModernToggleButtonWithLight(text: "PL", isOn: $showPlaylist)
                             }
                         }
                     }
@@ -224,11 +225,16 @@ struct MainPlayerView: View {
                         }
                     }
                     
-                    // Preferences/Settings button (orange)
-                    Button(action: {}) {
-                        Image(systemName: "gear.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(Color(red: 1.0, green: 0.6, blue: 0.2))
+                    // Visualization toggle button
+                    Button(action: { showVisualization.toggle() }) {
+                        Text("VIS")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(showVisualization ? .black : .white)
+                            .frame(width: 32, height: 28)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(showVisualization ? WinampColors.displayText : Color(red: 0.22, green: 0.25, blue: 0.32))
+                            )
                     }
                     .buttonStyle(.plain)
                 }
@@ -1246,59 +1252,614 @@ struct ModernSlider: View {
     }
 }
 
-// Modern toggle button with 3D bevel effect (EQ/PL style)
-struct ModernToggleButton: View {
+// Modern toggle button with 3D bevel effect and indicator light (EQ/PL style)
+struct ModernToggleButtonWithLight: View {
     let text: String
     @Binding var isOn: Bool
     
     var body: some View {
         Button(action: { isOn.toggle() }) {
-            Text(text)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundColor(isOn ? .black : WinampColors.displayText)
-                .frame(width: 24, height: 20)
-                .background(
-                    ZStack {
-                        if isOn {
-                            // Raised button when active
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(WinampColors.displayText)
-                            
-                            // Top highlight
-                            RoundedRectangle(cornerRadius: 3)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [Color.white.opacity(0.5), Color.clear],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ),
-                                    lineWidth: 1
-                                )
-                        } else {
-                            // Inset button when inactive
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color(red: 0.15, green: 0.17, blue: 0.22))
-                            
-                            // Inner shadow effect
-                            RoundedRectangle(cornerRadius: 3)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [Color.black.opacity(0.6), Color.white.opacity(0.1)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        }
+            VStack(spacing: 1) {
+                // Indicator light
+                Circle()
+                    .fill(isOn ? WinampColors.displayText : Color.black)
+                    .frame(width: 4, height: 4)
+                    .shadow(color: isOn ? WinampColors.displayText : Color.clear, radius: 2, x: 0, y: 0)
+                
+                Text(text)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(isOn ? .black : WinampColors.displayText)
+            }
+            .frame(width: 24, height: 20)
+            .background(
+                ZStack {
+                    if isOn {
+                        // Raised button when active
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(WinampColors.displayText)
+                        
+                        // Top highlight
+                        RoundedRectangle(cornerRadius: 3)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.5), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                    } else {
+                        // Inset button when inactive
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(red: 0.15, green: 0.17, blue: 0.22))
+                        
+                        // Inner shadow effect
+                        RoundedRectangle(cornerRadius: 3)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [Color.black.opacity(0.6), Color.white.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1.5
+                            )
                     }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .strokeBorder(Color.black.opacity(0.5), lineWidth: 1)
-                )
-                .shadow(color: isOn ? Color.black.opacity(0.3) : Color.clear, radius: 1, x: 0, y: 1)
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(Color.black.opacity(0.5), lineWidth: 1)
+            )
+            .shadow(color: isOn ? Color.black.opacity(0.3) : Color.clear, radius: 1, x: 0, y: 1)
         }
         .buttonStyle(.plain)
+    }
+}
+
+// Visualization preset types
+enum VisualizationPreset: Int, CaseIterable {
+    case spiralGalaxy = 0
+    case oscillatorGrid = 1
+    case plasmaField = 2
+    case particleStorm = 3
+    case frequencyRings = 4
+    case waveformTunnel = 5
+    case kaleidoscope = 6
+    case lfoMorph = 7
+    
+    var name: String {
+        switch self {
+        case .spiralGalaxy: return "Spiral Galaxy"
+        case .oscillatorGrid: return "Oscillator Grid"
+        case .plasmaField: return "Plasma Field"
+        case .particleStorm: return "Particle Storm"
+        case .frequencyRings: return "Frequency Rings"
+        case .waveformTunnel: return "Waveform Tunnel"
+        case .kaleidoscope: return "Kaleidoscope"
+        case .lfoMorph: return "LFO Morph"
+        }
+    }
+}
+
+// Milkdrop-style visualizer view
+struct MilkdropVisualizerView: View {
+    @EnvironmentObject var audioPlayer: AudioPlayer
+    @EnvironmentObject var playlistManager: PlaylistManager
+    @State private var trackChangeTime: Date = Date()
+    @State private var currentPreset: VisualizationPreset = .spiralGalaxy
+    @State private var presetChangeTime: Date = Date()
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Title bar with preset controls
+            HStack {
+                Button(action: previousPreset) {
+                    Text("◀")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 4)
+                
+                Text("MILKDROP • \(currentPreset.name)")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+                    .tracking(1)
+                
+                Spacer()
+                
+                Button(action: nextPreset) {
+                    Text("▶")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 4)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 14)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.15, green: 0.2, blue: 0.35),
+                        Color(red: 0.1, green: 0.15, blue: 0.25)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            
+            // Visualization canvas
+            TimelineView(.animation) { timeline in
+                MilkdropCanvas(
+                    audioPlayer: audioPlayer,
+                    time: timeline.date.timeIntervalSinceReferenceDate,
+                    trackTitle: playlistManager.currentTrack?.title ?? "",
+                    trackChangeTime: trackChangeTime,
+                    preset: currentPreset,
+                    presetChangeTime: presetChangeTime
+                )
+            }
+            .background(Color.black)
+        }
+        .background(Color.black)
+        .onChange(of: playlistManager.currentTrack?.id) { _ in
+            trackChangeTime = Date()
+        }
+    }
+    
+    private func nextPreset() {
+        let allPresets = VisualizationPreset.allCases
+        let currentIndex = allPresets.firstIndex(of: currentPreset) ?? 0
+        let nextIndex = (currentIndex + 1) % allPresets.count
+        currentPreset = allPresets[nextIndex]
+        presetChangeTime = Date()
+    }
+    
+    private func previousPreset() {
+        let allPresets = VisualizationPreset.allCases
+        let currentIndex = allPresets.firstIndex(of: currentPreset) ?? 0
+        let prevIndex = (currentIndex - 1 + allPresets.count) % allPresets.count
+        currentPreset = allPresets[prevIndex]
+        presetChangeTime = Date()
+    }
+}
+
+// Separate canvas view to avoid compiler timeout
+struct MilkdropCanvas: View {
+    let audioPlayer: AudioPlayer
+    let time: Double
+    let trackTitle: String
+    let trackChangeTime: Date
+    let preset: VisualizationPreset
+    let presetChangeTime: Date
+    
+    var body: some View {
+        Canvas { context, size in
+            drawVisualization(context: &context, size: size, time: time)
+            drawTrackTitle(context: &context, size: size, time: time)
+            drawPresetChange(context: &context, size: size, time: time)
+        }
+    }
+    
+    private func drawVisualization(context: inout GraphicsContext, size: CGSize, time: Double) {
+        // Black background with subtle gradient
+        let bgGradient = Gradient(colors: [
+            Color(red: 0.05, green: 0.05, blue: 0.1),
+            Color.black
+        ])
+        context.fill(
+            Path(CGRect(origin: .zero, size: size)),
+            with: .linearGradient(bgGradient, startPoint: .zero, endPoint: CGPoint(x: size.width, y: size.height))
+        )
+        
+        let centerX = size.width / 2
+        let centerY = size.height / 2
+        
+        // Draw based on current preset
+        switch preset {
+        case .spiralGalaxy:
+            drawSpiralGalaxy(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+            drawEnergyRings(context: &context, centerX: centerX, centerY: centerY, time: time)
+            drawWaveforms(context: &context, size: size, time: time)
+            drawParticles(context: &context, centerX: centerX, centerY: centerY, time: time)
+            
+        case .oscillatorGrid:
+            drawOscillatorGrid(context: &context, size: size, time: time)
+            
+        case .plasmaField:
+            drawPlasmaField(context: &context, size: size, time: time)
+            
+        case .particleStorm:
+            drawParticleStorm(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+            
+        case .frequencyRings:
+            drawFrequencyRings(context: &context, centerX: centerX, centerY: centerY, time: time)
+            
+        case .waveformTunnel:
+            drawWaveformTunnel(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+            
+        case .kaleidoscope:
+            drawKaleidoscope(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+            
+        case .lfoMorph:
+            drawLFOMorph(context: &context, centerX: centerX, centerY: centerY, size: size, time: time)
+        }
+    }
+    
+    private func drawSpiralGalaxy(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let intensity = CGFloat(avgLevel) * 2 + 0.5
+        
+        // Multiple spiral arms
+        for arm in 0..<3 {
+            for i in 0..<150 {
+                let t = Double(i) / 150.0
+                let angle = t * .pi * 6 + time * 0.5 + Double(arm) * .pi * 2 / 3
+                let radius = t * min(size.width, size.height) * 0.4 * intensity
+                let x = centerX + cos(angle) * radius
+                let y = centerY + sin(angle) * radius
+                
+                let hue = (t + time * 0.1 + Double(arm) * 0.33).truncatingRemainder(dividingBy: 1.0)
+                let brightness = (1.0 - t) * Double(avgLevel) * 1.2 + 0.3
+                let color = Color(hue: hue, saturation: 0.9, brightness: brightness)
+                
+                let particleSize = (1.0 - t) * 6 + 2
+                let rect = CGRect(x: x - particleSize/2, y: y - particleSize/2, width: particleSize, height: particleSize)
+                context.fill(Path(ellipseIn: rect), with: .color(color))
+            }
+        }
+    }
+    
+    private func drawEnergyRings(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, time: Double) {
+        // Pulsing concentric rings based on spectrum
+        for (index, level) in audioPlayer.spectrumData.prefix(12).enumerated() {
+            let angle = Double(index) / 12.0 * .pi * 2 + time * 0.4
+            let baseDist: CGFloat = 120
+            let dist = baseDist + CGFloat(level) * 180
+            let x = centerX + cos(angle) * dist
+            let y = centerY + sin(angle) * dist
+            
+            // Multiple ring sizes for depth
+            for ring in 0..<3 {
+                let radius = CGFloat(level) * 45 + CGFloat(ring) * 15 + 8
+                let opacity = 0.7 - Double(ring) * 0.2
+                
+                let hue = Double(index) / 12.0
+                let color = Color(hue: hue, saturation: 1.0, brightness: Double(level) * 0.7 + 0.4)
+                
+                let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(opacity)))
+            }
+        }
+    }
+    
+    private func drawWaveforms(context: inout GraphicsContext, size: CGSize, time: Double) {
+        // Multiple layered waveforms
+        for layer in 0..<3 {
+            var path = Path()
+            let yOffset = size.height * (0.3 + Double(layer) * 0.2)
+            let amplitude: CGFloat = 80
+            
+            path.move(to: CGPoint(x: 0, y: yOffset))
+            
+            for x in stride(from: 0, through: size.width, by: 4) {
+                let progress = x / size.width
+                let spectrumIndex = Int(progress * Double(audioPlayer.spectrumData.count))
+                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                
+                let wavePhase = time * (1.5 + Double(layer) * 0.5)
+                let y = yOffset + amplitude * CGFloat(level) * sin(x / 40 + wavePhase)
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+            
+            let hue = (time * 0.1 + Double(layer) * 0.33).truncatingRemainder(dividingBy: 1.0)
+            let color = Color(hue: hue, saturation: 0.9, brightness: 0.8)
+            let lineWidth: CGFloat = 3 - CGFloat(layer)
+            
+            context.stroke(path, with: .color(color.opacity(0.7 - Double(layer) * 0.15)), lineWidth: lineWidth)
+        }
+    }
+    
+    private func drawParticles(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, time: Double) {
+        // Floating particles that react to music
+        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        
+        for i in 0..<80 {
+            let seed = Double(i) * 17.3
+            let angle = time * 0.3 + seed
+            let radius = sin(time * 0.5 + seed) * 250 + 150
+            let x = centerX + cos(angle) * radius
+            let y = centerY + sin(angle) * radius
+            
+            let size = (sin(time * 2 + seed) + 1) * 2 + 1
+            let hue = (seed / 50.0 + time * 0.05).truncatingRemainder(dividingBy: 1.0)
+            let brightness = Double(avgLevel) * 0.8 + 0.3
+            let color = Color(hue: hue, saturation: 0.8, brightness: brightness)
+            
+            let rect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
+            context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.6)))
+        }
+    }
+    
+    private func drawTrackTitle(context: inout GraphicsContext, size: CGSize, time: Double) {
+        guard !trackTitle.isEmpty else { return }
+        
+        // Calculate time since track changed
+        let timeSinceChange = Date().timeIntervalSince(trackChangeTime)
+        
+        // Fade out over 5 seconds
+        let fadeOutDuration = 5.0
+        let opacity = max(0, 1.0 - (timeSinceChange / fadeOutDuration))
+        
+        guard opacity > 0 else { return }
+        
+        // Rotate the text
+        let rotation = time * 0.2
+        
+        // Create the text
+        let centerX = size.width / 2
+        let centerY = size.height / 2
+        
+        // Create resolved text
+        let hue = (time * 0.1).truncatingRemainder(dividingBy: 1.0)
+        let textColor = Color(hue: hue, saturation: 1.0, brightness: 1.0)
+        
+        let text = Text(trackTitle)
+            .font(.system(size: 36, weight: .bold, design: .rounded))
+            .foregroundColor(textColor)
+        
+        // Resolve text for drawing
+        let resolved = context.resolve(text)
+        
+        // Save the context state
+        var textContext = context
+        
+        // Apply rotation around center
+        textContext.translateBy(x: centerX, y: centerY)
+        textContext.rotate(by: .radians(rotation))
+        textContext.translateBy(x: -centerX, y: -centerY)
+        
+        // Draw glow layers
+        for i in 0..<3 {
+            let glowOpacity = opacity * (0.3 - Double(i) * 0.1)
+            let glowOffset = CGFloat((3 - i)) * 3
+            
+            var glowContext = textContext
+            glowContext.opacity = glowOpacity
+            glowContext.addFilter(.blur(radius: 8))
+            
+            glowContext.draw(
+                resolved,
+                at: CGPoint(x: centerX, y: centerY),
+                anchor: .center
+            )
+        }
+        
+        // Draw main text
+        textContext.opacity = opacity
+        textContext.draw(resolved, at: CGPoint(x: centerX, y: centerY), anchor: .center)
+    }
+    
+    private func drawPresetChange(context: inout GraphicsContext, size: CGSize, time: Double) {
+        let timeSinceChange = Date().timeIntervalSince(presetChangeTime)
+        let fadeOutDuration = 2.0
+        let opacity = max(0, 1.0 - (timeSinceChange / fadeOutDuration))
+        
+        guard opacity > 0 else { return }
+        
+        let text = Text(preset.name)
+            .font(.system(size: 24, weight: .bold))
+            .foregroundColor(.white)
+        
+        let resolved = context.resolve(text)
+        
+        var textContext = context
+        textContext.opacity = opacity
+        textContext.draw(resolved, at: CGPoint(x: size.width / 2, y: 40), anchor: .center)
+    }
+    
+    // MARK: - Oscillator Grid Visualization
+    private func drawOscillatorGrid(context: inout GraphicsContext, size: CGSize, time: Double) {
+        let rows = 12
+        let cols = 16
+        let cellWidth = size.width / CGFloat(cols)
+        let cellHeight = size.height / CGFloat(rows)
+        
+        for row in 0..<rows {
+            for col in 0..<cols {
+                let x = CGFloat(col) * cellWidth + cellWidth / 2
+                let y = CGFloat(row) * cellHeight + cellHeight / 2
+                
+                let spectrumIndex = (col * audioPlayer.spectrumData.count) / cols
+                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                
+                let phase = time + Double(row) * 0.5 + Double(col) * 0.3
+                let wave = sin(phase * 3) * CGFloat(level) * 0.5 + 0.5
+                
+                let hue = (Double(col) / Double(cols) + time * 0.05).truncatingRemainder(dividingBy: 1.0)
+                let color = Color(hue: hue, saturation: 0.9, brightness: Double(wave))
+                
+                let radius = cellWidth * 0.3 * wave
+                let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.8)))
+            }
+        }
+    }
+    
+    // MARK: - Plasma Field Visualization
+    private func drawPlasmaField(context: inout GraphicsContext, size: CGSize, time: Double) {
+        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let speed = time * (0.5 + Double(avgLevel))
+        
+        for y in stride(from: 0, to: size.height, by: 8) {
+            for x in stride(from: 0, to: size.width, by: 8) {
+                let nx = x / size.width
+                let ny = y / size.height
+                
+                let plasma = sin(nx * 10 + speed)
+                    + sin(ny * 10 + speed)
+                    + sin((nx + ny) * 10 + speed)
+                    + sin(sqrt(nx * nx + ny * ny) * 10 + speed)
+                
+                let normalized = (plasma + 4) / 8
+                let hue = normalized
+                let brightness = 0.5 + Double(avgLevel) * 0.5
+                
+                let color = Color(hue: hue, saturation: 1.0, brightness: brightness)
+                let rect = CGRect(x: x, y: y, width: 8, height: 8)
+                context.fill(Path(rect), with: .color(color))
+            }
+        }
+    }
+    
+    // MARK: - Particle Storm Visualization
+    private func drawParticleStorm(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        for i in 0..<200 {
+            let seed = Double(i) * 23.7
+            let spectrumIndex = i % audioPlayer.spectrumData.count
+            let level = audioPlayer.spectrumData[spectrumIndex]
+            
+            let angle = time * 2 + seed
+            let speed = 1.0 + Double(level) * 3
+            let distance = ((time * speed + seed).truncatingRemainder(dividingBy: 500))
+            
+            let x = centerX + cos(angle) * distance
+            let y = centerY + sin(angle) * distance
+            
+            let size = CGFloat(level) * 8 + 2
+            let hue = (seed / 100 + time * 0.2).truncatingRemainder(dividingBy: 1.0)
+            let color = Color(hue: hue, saturation: 1.0, brightness: Double(level) * 0.7 + 0.3)
+            
+            let rect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
+            context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.7)))
+        }
+    }
+    
+    // MARK: - Frequency Rings Visualization
+    private func drawFrequencyRings(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, time: Double) {
+        for (index, level) in audioPlayer.spectrumData.enumerated() {
+            let radius = CGFloat(index) * 15 + 50 + CGFloat(level) * 80
+            let thickness: CGFloat = 4 + CGFloat(level) * 10
+            
+            let hue = Double(index) / Double(audioPlayer.spectrumData.count)
+            let color = Color(hue: hue, saturation: 1.0, brightness: Double(level) * 0.8 + 0.2)
+            
+            var path = Path()
+            path.addEllipse(in: CGRect(x: centerX - radius, y: centerY - radius, width: radius * 2, height: radius * 2))
+            
+            context.stroke(path, with: .color(color.opacity(0.6)), lineWidth: thickness)
+        }
+    }
+    
+    // MARK: - Waveform Tunnel Visualization
+    private func drawWaveformTunnel(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        for ring in 0..<30 {
+            let depth = CGFloat(ring) / 30.0
+            let radius = (1.0 - depth) * min(size.width, size.height) * 0.4 + 50
+            
+            var path = Path()
+            let segments = 60
+            
+            for i in 0...segments {
+                let angle = (Double(i) / Double(segments)) * .pi * 2
+                let spectrumIndex = (i * audioPlayer.spectrumData.count) / segments
+                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                
+                let wave = CGFloat(level) * 50 * (1.0 - depth)
+                let r = radius + wave
+                
+                let x = centerX + cos(angle + time + Double(ring) * 0.2) * r
+                let y = centerY + sin(angle + time + Double(ring) * 0.2) * r
+                
+                if i == 0 {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+            
+            let hue = (Double(ring) / 30.0 + time * 0.1).truncatingRemainder(dividingBy: 1.0)
+            let color = Color(hue: hue, saturation: 0.9, brightness: 1.0 - depth * 0.5)
+            
+            context.stroke(path, with: .color(color.opacity(0.5)), lineWidth: 2)
+        }
+    }
+    
+    // MARK: - Kaleidoscope Visualization
+    private func drawKaleidoscope(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        let segments = 12
+        let angleStep = .pi * 2 / Double(segments)
+        
+        for segment in 0..<segments {
+            let baseAngle = Double(segment) * angleStep
+            
+            var segmentContext = context
+            segmentContext.translateBy(x: centerX, y: centerY)
+            segmentContext.rotate(by: .radians(baseAngle))
+            segmentContext.translateBy(x: -centerX, y: -centerY)
+            
+            for i in 0..<50 {
+                let t = Double(i) / 50.0
+                let spectrumIndex = (i * audioPlayer.spectrumData.count) / 50
+                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                
+                let r = t * 300
+                let angle = t * .pi * 4 + time
+                let x = centerX + cos(angle) * r
+                let y = centerY + sin(angle) * r * CGFloat(level + 0.3)
+                
+                let hue = (t + time * 0.1).truncatingRemainder(dividingBy: 1.0)
+                let color = Color(hue: hue, saturation: 1.0, brightness: Double(level) * 0.7 + 0.3)
+                
+                let size = CGFloat(level) * 20 + 5
+                let rect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
+                segmentContext.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.6)))
+            }
+        }
+    }
+    
+    // MARK: - LFO Morph Visualization
+    private func drawLFOMorph(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
+        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        
+        // LFO modulators
+        let lfo1 = sin(time * 0.5) * 0.5 + 0.5
+        let lfo2 = sin(time * 0.7) * 0.5 + 0.5
+        let lfo3 = sin(time * 1.1) * 0.5 + 0.5
+        
+        for layer in 0..<5 {
+            let layerDepth = Double(layer) / 5.0
+            let radius = 100 + layerDepth * 200
+            
+            var path = Path()
+            let segments = 120
+            
+            for i in 0...segments {
+                let angle = (Double(i) / Double(segments)) * .pi * 2
+                let spectrumIndex = (i * audioPlayer.spectrumData.count) / segments
+                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                
+                let morph1 = sin(angle * 3 + time * lfo1) * lfo2 * 50
+                let morph2 = cos(angle * 5 + time * lfo3) * lfo1 * 30
+                let audioMod = Double(level) * 80
+                
+                let r = radius + morph1 + morph2 + audioMod
+                let x = centerX + cos(angle) * r
+                let y = centerY + sin(angle) * r
+                
+                if i == 0 {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+            
+            let hue = (layerDepth + time * 0.1 + Double(avgLevel) * 0.5).truncatingRemainder(dividingBy: 1.0)
+            let color = Color(hue: hue, saturation: 0.9, brightness: 0.8)
+            
+            context.stroke(path, with: .color(color.opacity(0.6)), lineWidth: 3)
+        }
     }
 }
 

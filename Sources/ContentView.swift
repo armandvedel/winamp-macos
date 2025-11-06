@@ -7,28 +7,47 @@ struct ContentView: View {
     @State private var showPlaylist = true
     @State private var showEqualizer = false
     @State private var isShadeMode = false
+    @State private var showVisualization = false
+    @State private var contentHeight: CGFloat = 450
     
     var body: some View {
-        VStack(spacing: 0) {
-            if isShadeMode {
-                ShadeView(isShadeMode: $isShadeMode)
-            } else {
-                MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode)
-                
-                if showPlaylist {
-                    PlaylistView()
-                        .frame(width: 450, height: 250)
-                }
-                
-                if showEqualizer {
-                    EqualizerView()
-                        .frame(width: 450, height: 200)
+        HStack(alignment: .top, spacing: 0) {
+            // Main Winamp player (left side)
+            VStack(spacing: 0) {
+                if isShadeMode {
+                    ShadeView(isShadeMode: $isShadeMode)
+                } else {
+                    MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization)
+                    
+                    if showPlaylist {
+                        PlaylistView()
+                            .frame(width: 450, height: 250)
+                    }
+                    
+                    if showEqualizer {
+                        EqualizerView()
+                            .frame(width: 450, height: 200)
+                    }
                 }
             }
+            .frame(width: 450)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: HeightPreferenceKey.self, value: geo.size.height)
+                }
+            )
+            
+            // Milkdrop visualization window (right side)
+            if showVisualization {
+                MilkdropVisualizerView()
+                    .frame(width: 600, height: max(contentHeight, 450))
+            }
         }
-        .frame(width: 450)
+        .onPreferenceChange(HeightPreferenceKey.self) { height in
+            contentHeight = height
+        }
         .fixedSize(horizontal: true, vertical: true)
-        .background(WinampColors.background)
+        .background(Color.black)
         .onAppear {
             setupWindow()
         }
@@ -38,7 +57,7 @@ struct ContentView: View {
                 if let window = NSApplication.shared.windows.first,
                    let contentView = window.contentView {
                     let fittingSize = contentView.fittingSize
-                    window.setContentSize(NSSize(width: 450, height: fittingSize.height))
+                    window.setContentSize(fittingSize)
                     
                     // When in shade mode, keep window on top of all other windows
                     if newValue {
@@ -48,6 +67,16 @@ struct ContentView: View {
                         window.level = .normal
                         window.collectionBehavior = []
                     }
+                }
+            }
+        }
+        .onChange(of: showVisualization) { _ in
+            // Resize window when toggling visualization
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if let window = NSApplication.shared.windows.first,
+                   let contentView = window.contentView {
+                    let fittingSize = contentView.fittingSize
+                    window.setContentSize(fittingSize)
                 }
             }
         }
@@ -104,11 +133,16 @@ struct ContentView: View {
             window.setFrameOrigin(NSPoint(x: x, y: y))
         }
         
-        // Ensure window is sized correctly
-        if let contentView = window.contentView {
-            let fittingSize = contentView.fittingSize
-            window.setContentSize(NSSize(width: 450, height: fittingSize.height))
-        }
+        // Don't force a specific size - let it adjust based on content
+        window.setContentSize(window.contentView?.fittingSize ?? NSSize(width: 450, height: 400))
+    }
+}
+
+// Preference key to track content height
+struct HeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

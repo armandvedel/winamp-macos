@@ -136,7 +136,7 @@ struct MainPlayerView: View {
                         
                         // Volume slider and EQ/PL buttons
                         HStack(spacing: 4) {
-                            // Volume slider (green)
+                            // Volume slider (green to red)
                             ModernSlider(
                                 value: Binding(
                                     get: { Double(audioPlayer.volume) },
@@ -145,7 +145,7 @@ struct MainPlayerView: View {
                                 range: 0...1,
                                 color: WinampColors.displayText
                             )
-                            .frame(width: 70, height: 20)
+                            .frame(width: 100, height: 12)
                             
                             Spacer()
                             
@@ -1252,70 +1252,86 @@ struct ModernSlider: View {
     
     var body: some View {
         GeometryReader { geometry in
+            let volumePercent = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+            
+            // Calculate color based on volume (black at 0, green -> yellow -> red as volume increases)
+            let backgroundColor: Color = {
+                if volumePercent <= 0.01 {
+                    // Muted (black)
+                    return Color.black
+                } else if volumePercent < 0.5 {
+                    // Green to Yellow (0 to 0.5)
+                    let localPercent = volumePercent * 2.0
+                    return Color(
+                        red: localPercent,
+                        green: 0.8,
+                        blue: 0.0
+                    )
+                } else {
+                    // Yellow to Red (0.5 to 1.0)
+                    let localPercent = (volumePercent - 0.5) * 2.0
+                    return Color(
+                        red: 1.0,
+                        green: 1.0 - (localPercent * 1.0),
+                        blue: 0.0
+                    )
+                }
+            }()
+            
             ZStack(alignment: .leading) {
-                // Inset background track with enhanced 3D effect
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.black.opacity(0.6))
+                // Solid color background that changes with volume
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(backgroundColor)
                     .overlay(
-                        // Enhanced inner shadow effect - dark top/left, bright bottom/right
-                        RoundedRectangle(cornerRadius: 10)
+                        // Enhanced inner shadow effect
+                        RoundedRectangle(cornerRadius: 8)
                             .strokeBorder(
                                 LinearGradient(
                                     colors: [
-                                        Color.black.opacity(0.9),   // Dark shadow at top
+                                        Color.black.opacity(0.9),
                                         Color.black.opacity(0.5),
                                         Color.white.opacity(0.1),
-                                        Color.white.opacity(0.3)    // Bright highlight at bottom
+                                        Color.white.opacity(0.3)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ),
-                                lineWidth: 2
+                                lineWidth: 1.5
                             )
                     )
                 
-                // Progress fill with enhanced raised 3D effect
-                RoundedRectangle(cornerRadius: 9)
+                // Speaker icon on left side
+                HStack {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundColor(Color.white.opacity(0.7))
+                        .shadow(color: Color.black.opacity(0.5), radius: 1, x: 0, y: 1)
+                        .padding(.leading, 3)
+                    Spacer()
+                }
+                
+                // Dot slider handle
+                let handleX = (geometry.size.width - 10) * CGFloat(volumePercent)
+                
+                Circle()
                     .fill(
                         LinearGradient(
-                            colors: [
-                                color.opacity(1.0),
-                                color.opacity(0.8)
-                            ],
+                            colors: [WinampColors.buttonLight, WinampColors.buttonFace],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-                    .frame(width: max(18, geometry.size.width * CGFloat((value - range.lowerBound) / (range.upperBound - range.lowerBound))))
+                    .frame(width: 10, height: 10)
                     .overlay(
-                        // Enhanced raised bevel - bright white on top, dark shadow on bottom
-                        RoundedRectangle(cornerRadius: 9)
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.7),   // Bright highlight at top
-                                        Color.white.opacity(0.3),
-                                        Color.black.opacity(0.2),
-                                        Color.black.opacity(0.5)    // Dark shadow at bottom
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 1.5
-                            )
+                        Circle()
+                            .strokeBorder(Color.black.opacity(0.5), lineWidth: 1)
                     )
-                    .padding(2)
-                
-                // Pause icon in center
-                Text("⏸")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(Color.white.opacity(0.7))
-                    .shadow(color: Color.black.opacity(0.5), radius: 1, x: 0, y: 1)
-                    .frame(maxWidth: .infinity)
+                    .shadow(color: Color.black.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .offset(x: handleX)
             }
             .overlay(
                 // Outer border
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color.black.opacity(0.5), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)

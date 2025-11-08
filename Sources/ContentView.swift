@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var shuffleEnabled = false
     @State private var repeatEnabled = false
     @State private var songDisplayMode: DisplayMode = .scrolling
+    @State private var showRemainingTime = false
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -21,9 +22,9 @@ struct ContentView: View {
             if !visualizerFullscreen {
                 VStack(spacing: 0) {
                     if isShadeMode {
-                        ShadeView(isShadeMode: $isShadeMode, songDisplayMode: $songDisplayMode)
+                        ShadeView(isShadeMode: $isShadeMode, songDisplayMode: $songDisplayMode, showRemainingTime: $showRemainingTime)
                     } else {
-                        MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization, shuffleEnabled: $shuffleEnabled, repeatEnabled: $repeatEnabled, songDisplayMode: $songDisplayMode)
+                        MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization, shuffleEnabled: $shuffleEnabled, repeatEnabled: $repeatEnabled, songDisplayMode: $songDisplayMode, showRemainingTime: $showRemainingTime)
                         
                         if showPlaylist {
                             PlaylistView(playlistSize: $playlistSize)
@@ -59,7 +60,15 @@ struct ContentView: View {
             setupWindow()
             loadStartupSound()
             loadPlaylistSize()
+            loadDisplayMode()
+            loadTimeDisplayPreference()
             setupWindowNotifications()
+        }
+        .onChange(of: songDisplayMode) { newMode in
+            saveDisplayMode(newMode)
+        }
+        .onChange(of: showRemainingTime) { newValue in
+            saveTimeDisplayPreference(newValue)
         }
         .onChange(of: isShadeMode) { newValue in
             // Force window to resize when toggling shade mode
@@ -179,6 +188,52 @@ struct ContentView: View {
         if savedHeight > 0 {
             playlistSize = CGSize(width: 450, height: savedHeight)
         }
+    }
+    
+    private func loadDisplayMode() {
+        // Load saved display mode from UserDefaults
+        let savedModeString = UserDefaults.standard.string(forKey: "songDisplayMode")
+        
+        if let modeString = savedModeString {
+            switch modeString {
+            case "vestaboard":
+                songDisplayMode = .vestaboard
+            case "scrolling":
+                songDisplayMode = .scrolling
+            case "scrollingUp":
+                songDisplayMode = .scrollingUp
+            case "pixelated":
+                songDisplayMode = .pixelated
+            default:
+                songDisplayMode = .scrolling
+            }
+        }
+    }
+    
+    private func saveDisplayMode(_ mode: DisplayMode) {
+        // Save display mode to UserDefaults
+        let modeString: String
+        switch mode {
+        case .vestaboard:
+            modeString = "vestaboard"
+        case .scrolling:
+            modeString = "scrolling"
+        case .scrollingUp:
+            modeString = "scrollingUp"
+        case .pixelated:
+            modeString = "pixelated"
+        }
+        UserDefaults.standard.set(modeString, forKey: "songDisplayMode")
+    }
+    
+    private func loadTimeDisplayPreference() {
+        // Load time display preference from UserDefaults
+        showRemainingTime = UserDefaults.standard.bool(forKey: "showRemainingTime")
+    }
+    
+    private func saveTimeDisplayPreference(_ value: Bool) {
+        // Save time display preference to UserDefaults
+        UserDefaults.standard.set(value, forKey: "showRemainingTime")
     }
     
     private func setupWindowNotifications() {

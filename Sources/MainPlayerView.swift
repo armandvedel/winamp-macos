@@ -10,6 +10,7 @@ struct MainPlayerView: View {
     @Binding var shuffleEnabled: Bool
     @Binding var repeatEnabled: Bool
     @Binding var songDisplayMode: DisplayMode
+    @Binding var showRemainingTime: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -41,10 +42,13 @@ struct MainPlayerView: View {
                             }
                             .buttonStyle(.plain)
                             
-                            Text(formatTime(audioPlayer.currentTime))
+                            Text(formatTime(showRemainingTime ? -(audioPlayer.duration - audioPlayer.currentTime) : audioPlayer.currentTime, showNegative: showRemainingTime))
                                 .font(.system(size: 22, weight: .bold, design: .monospaced))
                                 .foregroundColor(WinampColors.displayText)
                                 .shadow(color: WinampColors.displayText.opacity(0.6), radius: 3, x: 0, y: 0)
+                                .onTapGesture {
+                                    showRemainingTime.toggle()
+                                }
                         }
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.horizontal, 6)
@@ -298,10 +302,12 @@ struct MainPlayerView: View {
         .background(WinampColors.mainBgDark)
     }
     
-    private func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%d:%02d", minutes, seconds)
+    private func formatTime(_ time: TimeInterval, showNegative: Bool = false) -> String {
+        let absTime = abs(time)
+        let minutes = Int(absTime) / 60
+        let seconds = Int(absTime) % 60
+        let prefix = showNegative ? "-" : ""
+        return String(format: "%@%d:%02d", prefix, minutes, seconds)
     }
 }
 
@@ -433,6 +439,7 @@ struct ShadeView: View {
     @EnvironmentObject var playlistManager: PlaylistManager
     @Binding var isShadeMode: Bool
     @Binding var songDisplayMode: DisplayMode
+    @Binding var showRemainingTime: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -479,7 +486,7 @@ struct ShadeView: View {
                 }
                 
                 // Time display with 3D inset
-                Text(formatTime(audioPlayer.currentTime))
+                Text(formatTime(showRemainingTime ? -(audioPlayer.duration - audioPlayer.currentTime) : audioPlayer.currentTime, showNegative: showRemainingTime))
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(WinampColors.displayText)
                     .shadow(color: WinampColors.displayText.opacity(0.5), radius: 2, x: 0, y: 0)
@@ -501,6 +508,9 @@ struct ShadeView: View {
                     )
                     .cornerRadius(3)
                     .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+                    .onTapGesture {
+                        showRemainingTime.toggle()
+                    }
                 
                 // Song title with animated visualization
                 AnimatedSongDisplay(
@@ -561,10 +571,12 @@ struct ShadeView: View {
         }
     }
     
-    func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%d:%02d", minutes, seconds)
+    func formatTime(_ time: TimeInterval, showNegative: Bool = false) -> String {
+        let absTime = abs(time)
+        let minutes = Int(absTime) / 60
+        let seconds = Int(absTime) % 60
+        let prefix = showNegative ? "-" : ""
+        return String(format: "%@%d:%02d", prefix, minutes, seconds)
     }
 }
 
@@ -2686,6 +2698,8 @@ struct MilkdropCanvas: View {
 enum DisplayMode {
     case vestaboard
     case scrolling
+    case scrollingUp
+    case pixelated
 }
 
 struct AnimatedSongDisplay: View {
@@ -2699,21 +2713,42 @@ struct AnimatedSongDisplay: View {
     @State private var revealedChars: Int = 0
     @State private var showingTimer: Double = 0
     @State private var vestaboardScrollOffset: CGFloat = 0
+    @State private var scrollUpOffset: CGFloat = 0
+    @State private var scrollUpPhase: Int = 0 // 0 = artist, 1 = title
+    @State private var scrollUpPaused: Bool = false
+    @State private var scrollUpPauseTimer: Double = 0
+    @State private var pixelatedPhase: Int = 0 // 0 = artist, 1 = title
+    @State private var pixelatedProgress: Double = 0 // 0 to 2 (0-1 = fade in, 1-2 = fade out)
+    @State private var charRandomOffsets: [Double] = []
     
     var body: some View {
         GeometryReader { geometry in
             Group {
-                if displayMode == .scrolling {
+                switch displayMode {
+                case .scrolling:
                     scrollingDisplay(width: geometry.size.width)
-                } else {
+                case .vestaboard:
                     vestaboardDisplay(width: geometry.size.width)
+                case .scrollingUp:
+                    scrollingUpDisplay(width: geometry.size.width, height: geometry.size.height)
+                case .pixelated:
+                    pixelatedDisplay(width: geometry.size.width)
                 }
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            // Toggle between display modes
-            displayMode = displayMode == .scrolling ? .vestaboard : .scrolling
+            // Cycle through display modes
+            switch displayMode {
+            case .scrolling:
+                displayMode = .vestaboard
+            case .vestaboard:
+                displayMode = .scrollingUp
+            case .scrollingUp:
+                displayMode = .pixelated
+            case .pixelated:
+                displayMode = .scrolling
+            }
             resetAnimation()
         }
         .onChange(of: trackId) { _ in
@@ -2824,6 +2859,154 @@ struct AnimatedSongDisplay: View {
         }
     }
     
+    private func scrollingUpDisplay(width: CGFloat, height: CGFloat) -> some View {
+        TimelineView(.animation(minimumInterval: 0.03)) { _ in
+            Canvas { context, size in
+                // Determine which text to show based on phase
+                let currentText = scrollUpPhase == 0 ? artist : title
+                
+                let text = Text(currentText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(WinampColors.displayText)
+                
+                let resolved = context.resolve(text)
+                let textHeight = resolved.measure(in: CGSize(width: width - 12, height: .infinity)).height
+                
+                // Create a scrolling window effect
+                // Text starts below the visible area and scrolls up
+                let startY = size.height + textHeight
+                let endY = -textHeight
+                let totalDistance = startY - endY
+                // Calculate the scroll offset when text is centered
+                let centerOffset = startY - (size.height / 2)
+                
+                // Calculate current Y position based on scroll offset
+                let currentY = startY - scrollUpOffset
+                
+                // Draw the text at the current position
+                context.draw(resolved, at: CGPoint(x: size.width / 2, y: currentY), anchor: .center)
+                
+                // Update animation state
+                DispatchQueue.main.async {
+                    updateScrollUpAnimation(totalDistance: totalDistance, centerOffset: centerOffset, viewHeight: size.height)
+                }
+            }
+        }
+    }
+    
+    private func updateScrollUpAnimation(totalDistance: CGFloat, centerOffset: CGFloat, viewHeight: CGFloat) {
+        // Calculate if text is centered
+        // When scrollUpOffset equals centerOffset, the text should be centered
+        let distanceFromCenter = abs(scrollUpOffset - centerOffset)
+        
+        // If we're within a threshold of the center and not already paused, start pause
+        // Use a wider threshold range to catch the centering more reliably
+        if distanceFromCenter < 5 && !scrollUpPaused && scrollUpOffset > 10 && scrollUpOffset < totalDistance - 10 {
+            scrollUpPaused = true
+            scrollUpPauseTimer = 0
+        }
+        
+        // If paused, increment timer
+        if scrollUpPaused {
+            scrollUpPauseTimer += 0.03
+            
+            // Resume after 2.5 seconds
+            if scrollUpPauseTimer >= 2.5 {
+                scrollUpPaused = false
+                scrollUpPauseTimer = 0
+            }
+        }
+        
+        // Only scroll if not paused
+        if !scrollUpPaused {
+            scrollUpOffset += 0.5
+        }
+        
+        // When text has fully scrolled off the top, switch to the other text
+        if scrollUpOffset >= totalDistance {
+            scrollUpOffset = 0
+            scrollUpPhase = scrollUpPhase == 0 ? 1 : 0
+            scrollUpPaused = false
+            scrollUpPauseTimer = 0
+        }
+    }
+    
+    private func pixelatedDisplay(width: CGFloat) -> some View {
+        TimelineView(.animation(minimumInterval: 0.03)) { _ in
+            Canvas { context, size in
+                // Determine which text to show based on phase
+                let currentText = pixelatedPhase == 0 ? artist : title
+                
+                // Ensure random offsets are initialized synchronously
+                let offsets: [Double]
+                if charRandomOffsets.count == currentText.count {
+                    offsets = charRandomOffsets
+                } else {
+                    // Create default offsets for this frame
+                    offsets = (0..<currentText.count).map { _ in Double.random(in: 0...0.5) }
+                    // Update state for next frame
+                    DispatchQueue.main.async {
+                        if self.charRandomOffsets.count != currentText.count {
+                            self.charRandomOffsets = offsets
+                        }
+                    }
+                }
+                
+                // Draw each character with individual opacity based on progress and random offset
+                var xPos: CGFloat = 6.0
+                for (index, char) in currentText.enumerated() {
+                    let randomOffset = index < offsets.count ? offsets[index] : 0
+                    let charProgress = pixelatedProgress + randomOffset
+                    
+                    // Calculate opacity: fade in from 0 to 1, then fade out from 1 to 0
+                    let opacity: Double
+                    if charProgress < 1.0 {
+                        // Fade in phase
+                        opacity = max(0, min(1, charProgress))
+                    } else {
+                        // Fade out phase
+                        opacity = max(0, min(1, 2.0 - charProgress))
+                    }
+                    
+                    // Add some vertical jitter during transition based on character index
+                    // Use a deterministic calculation instead of random
+                    let jitter = (1.0 - abs(1.0 - charProgress)) * 2.0 // Max jitter at mid-transition
+                    let jitterAmount = abs(jitter)
+                    let yOffset = sin(Double(index) * 0.5 + pixelatedProgress * 3.0) * jitterAmount
+                    
+                    let charText = Text(String(char))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(WinampColors.displayText.opacity(opacity))
+                    
+                    let resolved = context.resolve(charText)
+                    let charWidth = resolved.measure(in: size).width
+                    
+                    context.draw(resolved, at: CGPoint(x: xPos, y: size.height / 2 + yOffset), anchor: .leading)
+                    
+                    xPos += charWidth
+                }
+                
+                // Update animation state
+                DispatchQueue.main.async {
+                    self.updatePixelatedAnimation()
+                }
+            }
+        }
+    }
+    
+    private func updatePixelatedAnimation() {
+        pixelatedProgress += 0.02
+        
+        // When fully faded out, switch to the other text
+        if pixelatedProgress >= 2.5 {
+            pixelatedProgress = 0
+            pixelatedPhase = pixelatedPhase == 0 ? 1 : 0
+            // Reset random offsets for new text
+            let currentText = pixelatedPhase == 0 ? artist : title
+            charRandomOffsets = (0..<currentText.count).map { _ in Double.random(in: 0...0.5) }
+        }
+    }
+    
     private func updateVestaboardAnimation(fullText: String, textWidth: CGFloat, availableWidth: CGFloat) {
         switch vestaboardPhase {
         case 0: // Revealing artist
@@ -2905,6 +3088,14 @@ struct AnimatedSongDisplay: View {
         revealedChars = 0
         showingTimer = 0
         vestaboardScrollOffset = 0
+        scrollUpOffset = 0
+        scrollUpPhase = 0
+        scrollUpPaused = false
+        scrollUpPauseTimer = 0
+        pixelatedPhase = 0
+        pixelatedProgress = 0
+        charRandomOffsets = []
     }
 }
+
 

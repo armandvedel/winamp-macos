@@ -2842,8 +2842,8 @@ struct AnimatedSongDisplay: View {
                         }
                     }
                 } else {
-                    // Static text (fits)
-                    context.draw(resolved, at: CGPoint(x: 6, y: size.height / 2), anchor: .leading)
+                    // Static text (fits) - center it
+                    context.draw(resolved, at: CGPoint(x: size.width / 2, y: size.height / 2), anchor: .center)
                 }
             }
         }

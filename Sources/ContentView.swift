@@ -72,6 +72,12 @@ struct ContentView: View {
         .onChange(of: showRemainingTime) { newValue in
             saveTimeDisplayPreference(newValue)
         }
+        .onChange(of: showEqualizer) { _ in
+            // Resize window when equalizer is shown/hidden
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                resizeWindowKeepingTopPosition()
+            }
+        }
         .onChange(of: showPlaylist) { _ in
             // Resize window when playlist is shown/hidden
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

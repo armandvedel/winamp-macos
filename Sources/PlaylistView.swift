@@ -13,10 +13,10 @@ struct PlaylistView: View {
     @State private var userInitiatedPlayback = false // Track if user clicked to play a song
     @State private var lastCurrentIndex = -1 // Track the last index to detect changes
     @State private var searchText = "" // Search filter text
-    @State private var isMinimized = false
     
     // Resizing state
     @Binding var playlistSize: CGSize
+    @Binding var isMinimized: Bool
     @State private var isDragging = false
     @State private var dragStart: CGPoint = .zero
     @State private var hasLoadedGroupedState = false
@@ -87,6 +87,10 @@ struct PlaylistView: View {
                     endPoint: .bottom
                 )
             )
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                isMinimized.toggle()
+            }
             
             if !isMinimized {
                 // Search box - with explicit interaction layer
@@ -131,8 +135,21 @@ struct PlaylistView: View {
             }
             .frame(height: 22)
             .zIndex(100) // Keep search box well above everything
+            }
             
-            // Playlist content - flat or grouped
+            // Gray area when minimized (double-click to expand)
+            if isMinimized {
+                Rectangle()
+                    .fill(WinampColors.mainBg)
+                    .frame(height: 16)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        isMinimized.toggle()
+                    }
+            }
+            
+            // Playlist content - flat or grouped (only when not minimized)
+            if !isMinimized {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -354,6 +371,10 @@ struct PlaylistView: View {
             }
             .frame(height: 20)
             .background(WinampColors.mainBg)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                isMinimized.toggle()
+            }
             
             // Resize handle at bottom edge (only when not minimized)
             if !isMinimized {

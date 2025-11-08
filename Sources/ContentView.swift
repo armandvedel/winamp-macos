@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var repeatEnabled = false
     @State private var songDisplayMode: DisplayMode = .scrolling
     @State private var showRemainingTime = false
+    @State private var playlistMinimized = false
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -33,7 +34,7 @@ struct ContentView: View {
                     
                     // Playlist remains visible even when main player is in shade mode
                     if showPlaylist {
-                        PlaylistView(playlistSize: $playlistSize)
+                        PlaylistView(playlistSize: $playlistSize, isMinimized: $playlistMinimized)
                     }
                 }
                 .frame(width: 450)
@@ -56,6 +57,7 @@ struct ContentView: View {
         }
         .fixedSize(horizontal: !visualizerFullscreen, vertical: !visualizerFullscreen)
         .background(Color.black)
+        .ignoresSafeArea(.all)
         .onAppear {
             setupWindow()
             loadStartupSound()
@@ -69,6 +71,16 @@ struct ContentView: View {
         }
         .onChange(of: showRemainingTime) { newValue in
             saveTimeDisplayPreference(newValue)
+        }
+        .onChange(of: playlistMinimized) { _ in
+            // Resize window when playlist is minimized/expanded
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if let window = NSApplication.shared.windows.first,
+                   let contentView = window.contentView {
+                    let fittingSize = contentView.fittingSize
+                    window.setContentSize(fittingSize)
+                }
+            }
         }
         .onChange(of: isShadeMode) { newValue in
             // Force window to resize when toggling shade mode
@@ -147,6 +159,9 @@ struct ContentView: View {
         // Make title bar completely transparent and hide all buttons
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        
+        // Remove title bar spacing
+        window.toolbar = nil
         
         // FORCE hide the traffic light buttons
         window.standardWindowButton(.closeButton)?.superview?.isHidden = true

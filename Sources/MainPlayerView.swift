@@ -334,11 +334,10 @@ struct MainPlayerView: View {
             .onTapGesture(count: 2) {
                 isShadeMode = true
             }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 6)
         }
-        .frame(width: 450, height: 200)
+        .frame(width: 450, height: 160)
         .background(WinampColors.mainBg)
+        .ignoresSafeArea(.all, edges: .top)
     }
     
     private func formatTime(_ time: TimeInterval, showNegative: Bool = false) -> String {

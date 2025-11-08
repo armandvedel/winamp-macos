@@ -11,6 +11,8 @@ struct WinampApp: App {
                 .environmentObject(audioPlayer)
                 .environmentObject(playlistManager)
                 .preferredColorScheme(.dark)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .edgesIgnoringSafeArea(.all)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)

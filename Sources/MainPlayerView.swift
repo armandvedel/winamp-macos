@@ -2932,7 +2932,7 @@ struct AnimatedSongDisplay: View {
                 let endY = -textHeight
                 let totalDistance = startY - endY
                 // Calculate the scroll offset when text is centered
-                let centerOffset = startY - (size.height / 2)
+                let centerOffset = startY - (size.height / 2) + 2
                 
                 // Calculate current Y position based on scroll offset
                 let currentY = startY - scrollUpOffset

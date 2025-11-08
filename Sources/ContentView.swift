@@ -72,24 +72,24 @@ struct ContentView: View {
         .onChange(of: showRemainingTime) { newValue in
             saveTimeDisplayPreference(newValue)
         }
+        .onChange(of: showPlaylist) { _ in
+            // Resize window when playlist is shown/hidden
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                resizeWindowKeepingTopPosition()
+            }
+        }
         .onChange(of: playlistMinimized) { _ in
             // Resize window when playlist is minimized/expanded
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if let window = NSApplication.shared.windows.first,
-                   let contentView = window.contentView {
-                    let fittingSize = contentView.fittingSize
-                    window.setContentSize(fittingSize)
-                }
+                resizeWindowKeepingTopPosition()
             }
         }
         .onChange(of: isShadeMode) { newValue in
             // Force window to resize when toggling shade mode
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if let window = NSApplication.shared.windows.first,
-                   let contentView = window.contentView {
-                    let fittingSize = contentView.fittingSize
-                    window.setContentSize(fittingSize)
-                    
+                resizeWindowKeepingTopPosition()
+                
+                if let window = NSApplication.shared.windows.first {
                     // When in shade mode, keep window on top of all other windows
                     if newValue {
                         window.level = .floating
@@ -104,11 +104,7 @@ struct ContentView: View {
         .onChange(of: showVisualization) { _ in
             // Resize window when toggling visualization
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if let window = NSApplication.shared.windows.first,
-                   let contentView = window.contentView {
-                    let fittingSize = contentView.fittingSize
-                    window.setContentSize(fittingSize)
-                }
+                resizeWindowKeepingTopPosition()
             }
         }
     }
@@ -119,6 +115,41 @@ struct ContentView: View {
             for window in NSApplication.shared.windows {
                 configureWindow(window)
             }
+        }
+    }
+    
+    private func resizeWindowKeepingTopPosition() {
+        guard let window = NSApplication.shared.windows.first,
+              let contentView = window.contentView else { return }
+        
+        let currentFrame = window.frame
+        let fittingSize = contentView.fittingSize
+        
+        // Only resize if the size actually changed
+        guard abs(currentFrame.height - fittingSize.height) > 1 || 
+              abs(currentFrame.width - fittingSize.width) > 1 else { return }
+        
+        // Store the top Y position (in screen coordinates, Y increases upward)
+        let topY = currentFrame.origin.y + currentFrame.height
+        
+        // Set the new content size
+        window.setContentSize(fittingSize)
+        
+        // Get the new frame after resizing
+        let newFrame = window.frame
+        
+        // Calculate the new origin to keep the top at the same position
+        let newOriginY = topY - newFrame.height
+        
+        // Only reposition if the new origin is reasonable (not forced off-screen)
+        // Allow some tolerance for positioning
+        if let screen = window.screen {
+            let minY = screen.visibleFrame.minY - 50 // Allow 50pts below visible frame
+            if newOriginY >= minY {
+                window.setFrameOrigin(NSPoint(x: currentFrame.origin.x, y: newOriginY))
+            }
+        } else {
+            window.setFrameOrigin(NSPoint(x: currentFrame.origin.x, y: newOriginY))
         }
     }
     

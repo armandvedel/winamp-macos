@@ -9,6 +9,7 @@ struct MainPlayerView: View {
     @Binding var showVisualization: Bool
     @Binding var shuffleEnabled: Bool
     @Binding var repeatEnabled: Bool
+    @Binding var songDisplayMode: DisplayMode
     
     var body: some View {
         VStack(spacing: 0) {
@@ -78,16 +79,16 @@ struct MainPlayerView: View {
                     
                     // RIGHT: Song info, bitrate, sliders, and buttons
                     VStack(spacing: 4) {
-                        // Song title display
-                        Text(playlistManager.currentTrack?.title ?? "DJ Mike Llama • Llama Whippin' Intro")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(WinampColors.displayText)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color(red: 0.1, green: 0.12, blue: 0.18))
-                            .cornerRadius(3)
+                    // Song title display with animated visualization
+                    AnimatedSongDisplay(
+                        artist: playlistManager.currentTrack?.artist ?? "DJ Mike Llama",
+                        title: playlistManager.currentTrack?.title ?? "Llama Whippin' Intro",
+                        trackId: playlistManager.currentTrack?.id,
+                        displayMode: $songDisplayMode
+                    )
+                    .frame(height: 24)
+                    .background(Color(red: 0.1, green: 0.12, blue: 0.18))
+                    .cornerRadius(3)
                         
                         // Bitrate and format info row
                         HStack(spacing: 4) {
@@ -431,6 +432,7 @@ struct ShadeView: View {
     @EnvironmentObject var audioPlayer: AudioPlayer
     @EnvironmentObject var playlistManager: PlaylistManager
     @Binding var isShadeMode: Bool
+    @Binding var songDisplayMode: DisplayMode
     
     var body: some View {
         VStack(spacing: 0) {
@@ -500,32 +502,32 @@ struct ShadeView: View {
                     .cornerRadius(3)
                     .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
                 
-                // Song title with 3D inset
-                Text(playlistManager.currentTrack?.title ?? "No Track")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(WinampColors.displayText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 6)
-                    .frame(height: 20)
-                    .background(
-                        ZStack {
-                            Color(red: 0.1, green: 0.12, blue: 0.18)
-                            // Inner shadow effect
-                            RoundedRectangle(cornerRadius: 3)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [Color.black.opacity(0.7), Color.white.opacity(0.1)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        }
-                    )
-                    .cornerRadius(3)
-                    .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+                // Song title with animated visualization
+                AnimatedSongDisplay(
+                    artist: playlistManager.currentTrack?.artist ?? "DJ Mike Llama",
+                    title: playlistManager.currentTrack?.title ?? "Llama Whippin' Intro",
+                    trackId: playlistManager.currentTrack?.id,
+                    displayMode: $songDisplayMode
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: 20)
+                .background(
+                    ZStack {
+                        Color(red: 0.1, green: 0.12, blue: 0.18)
+                        // Inner shadow effect
+                        RoundedRectangle(cornerRadius: 3)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [Color.black.opacity(0.7), Color.white.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1.5
+                            )
+                    }
+                )
+                .cornerRadius(3)
+                .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
@@ -2676,6 +2678,233 @@ struct MilkdropCanvas: View {
             // Draw main text
             textContext.draw(resolved, at: CGPoint(x: centerX, y: yPosition), anchor: .center)
         }
+    }
+}
+
+// MARK: - Animated Song Display
+
+enum DisplayMode {
+    case vestaboard
+    case scrolling
+}
+
+struct AnimatedSongDisplay: View {
+    let artist: String
+    let title: String
+    let trackId: UUID?
+    @Binding var displayMode: DisplayMode
+    
+    @State private var scrollOffset: CGFloat = 0
+    @State private var vestaboardPhase: Int = 0 // 0 = revealing artist, 1 = showing/scrolling artist, 2 = revealing title, 3 = showing/scrolling title
+    @State private var revealedChars: Int = 0
+    @State private var showingTimer: Double = 0
+    @State private var vestaboardScrollOffset: CGFloat = 0
+    
+    var body: some View {
+        GeometryReader { geometry in
+            Group {
+                if displayMode == .scrolling {
+                    scrollingDisplay(width: geometry.size.width)
+                } else {
+                    vestaboardDisplay(width: geometry.size.width)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Toggle between display modes
+            displayMode = displayMode == .scrolling ? .vestaboard : .scrolling
+            resetAnimation()
+        }
+        .onChange(of: trackId) { _ in
+            resetAnimation()
+        }
+        .onAppear {
+            resetAnimation()
+        }
+    }
+    
+    private func scrollingDisplay(width: CGFloat) -> some View {
+        let fullText = "\(artist) • \(title)"
+        
+        return TimelineView(.animation(minimumInterval: 0.03)) { _ in
+            Canvas { context, size in
+                let text = Text(fullText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(WinampColors.displayText)
+                
+                let resolved = context.resolve(text)
+                let textWidth = resolved.measure(in: size).width
+                
+                // Check if text needs to scroll
+                if textWidth > width - 12 {
+                    // Scrolling text
+                    let scrollDistance = textWidth + 200 // Add gap between loops
+                    
+                    // Draw text twice for seamless loop
+                    context.draw(resolved, at: CGPoint(x: 6 + scrollOffset, y: size.height / 2), anchor: .leading)
+                    context.draw(resolved, at: CGPoint(x: 6 + scrollOffset + scrollDistance, y: size.height / 2), anchor: .leading)
+                    
+                    // Update scroll offset
+                    DispatchQueue.main.async {
+                        scrollOffset -= 0.3
+                        if scrollOffset <= -scrollDistance {
+                            scrollOffset = 0
+                        }
+                    }
+                } else {
+                    // Static text (fits)
+                    context.draw(resolved, at: CGPoint(x: 6, y: size.height / 2), anchor: .leading)
+                }
+            }
+        }
+    }
+    
+    private func vestaboardDisplay(width: CGFloat) -> some View {
+        TimelineView(.animation(minimumInterval: 0.05)) { _ in
+            Canvas { context, size in
+                // Determine which text to show based on phase
+                let fullText: String
+                let isRevealing: Bool
+                
+                switch vestaboardPhase {
+                case 0: // Revealing artist
+                    fullText = artist
+                    isRevealing = true
+                case 1: // Showing/scrolling artist
+                    fullText = artist
+                    isRevealing = false
+                case 2: // Revealing title
+                    fullText = title
+                    isRevealing = true
+                case 3: // Showing/scrolling title
+                    fullText = title
+                    isRevealing = false
+                default:
+                    fullText = ""
+                    isRevealing = false
+                }
+                
+                let text = Text(fullText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(WinampColors.displayText)
+                
+                let resolved = context.resolve(text)
+                let textWidth = resolved.measure(in: size).width
+                let availableWidth = width - 12
+                
+                if isRevealing {
+                    // Draw only revealed characters
+                    let displayText = String(fullText.prefix(revealedChars))
+                    let revealedText = Text(displayText)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(WinampColors.displayText)
+                    let revealedResolved = context.resolve(revealedText)
+                    context.draw(revealedResolved, at: CGPoint(x: 6, y: size.height / 2), anchor: .leading)
+                } else {
+                    // Text is fully revealed - check if it needs to scroll
+                    if textWidth > availableWidth {
+                        // Scrolling text
+                        let scrollDistance = textWidth + 100
+                        
+                        // Draw text twice for seamless loop
+                        context.draw(resolved, at: CGPoint(x: 6 + vestaboardScrollOffset, y: size.height / 2), anchor: .leading)
+                        context.draw(resolved, at: CGPoint(x: 6 + vestaboardScrollOffset + scrollDistance, y: size.height / 2), anchor: .leading)
+                    } else {
+                        // Static text (fits)
+                        context.draw(resolved, at: CGPoint(x: 6, y: size.height / 2), anchor: .leading)
+                    }
+                }
+                
+                // Update animation state
+                DispatchQueue.main.async {
+                    updateVestaboardAnimation(fullText: fullText, textWidth: textWidth, availableWidth: availableWidth)
+                }
+            }
+        }
+    }
+    
+    private func updateVestaboardAnimation(fullText: String, textWidth: CGFloat, availableWidth: CGFloat) {
+        switch vestaboardPhase {
+        case 0: // Revealing artist
+            // Slowly reveal one character at a time
+            if revealedChars < fullText.count {
+                showingTimer += 0.05
+                if showingTimer >= 0.1 { // Reveal a new character every 0.1 seconds
+                    revealedChars += 1
+                    showingTimer = 0
+                }
+            } else {
+                // Finished revealing, move to showing phase
+                vestaboardPhase = 1
+                showingTimer = 0
+                vestaboardScrollOffset = 0
+            }
+            
+        case 1: // Showing/scrolling artist
+            if textWidth > availableWidth {
+                // Scroll if needed
+                let scrollDistance = textWidth + 100
+                vestaboardScrollOffset -= 0.3
+                if vestaboardScrollOffset <= -scrollDistance {
+                    vestaboardScrollOffset = 0
+                }
+            }
+            
+            // Wait a bit then move to title
+            showingTimer += 0.05
+            if showingTimer >= 3.0 { // Show for 3 seconds
+                vestaboardPhase = 2
+                revealedChars = 0
+                showingTimer = 0
+                vestaboardScrollOffset = 0
+            }
+            
+        case 2: // Revealing title
+            // Slowly reveal one character at a time
+            if revealedChars < fullText.count {
+                showingTimer += 0.05
+                if showingTimer >= 0.1 { // Reveal a new character every 0.1 seconds
+                    revealedChars += 1
+                    showingTimer = 0
+                }
+            } else {
+                // Finished revealing, move to showing phase
+                vestaboardPhase = 3
+                showingTimer = 0
+                vestaboardScrollOffset = 0
+            }
+            
+        case 3: // Showing/scrolling title
+            if textWidth > availableWidth {
+                // Scroll if needed
+                let scrollDistance = textWidth + 100
+                vestaboardScrollOffset -= 0.3
+                if vestaboardScrollOffset <= -scrollDistance {
+                    vestaboardScrollOffset = 0
+                }
+            }
+            
+            // Wait a bit then go back to artist
+            showingTimer += 0.05
+            if showingTimer >= 3.0 { // Show for 3 seconds
+                vestaboardPhase = 0
+                revealedChars = 0
+                showingTimer = 0
+                vestaboardScrollOffset = 0
+            }
+            
+        default:
+            break
+        }
+    }
+    
+    private func resetAnimation() {
+        scrollOffset = 0
+        vestaboardPhase = 0
+        revealedChars = 0
+        showingTimer = 0
+        vestaboardScrollOffset = 0
     }
 }
 

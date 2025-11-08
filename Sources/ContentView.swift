@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var playlistSize: CGSize = CGSize(width: 450, height: 250)
     @State private var shuffleEnabled = false
     @State private var repeatEnabled = false
+    @State private var songDisplayMode: DisplayMode = .scrolling
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -20,9 +21,9 @@ struct ContentView: View {
             if !visualizerFullscreen {
                 VStack(spacing: 0) {
                     if isShadeMode {
-                        ShadeView(isShadeMode: $isShadeMode)
+                        ShadeView(isShadeMode: $isShadeMode, songDisplayMode: $songDisplayMode)
                     } else {
-                        MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization, shuffleEnabled: $shuffleEnabled, repeatEnabled: $repeatEnabled)
+                        MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization, shuffleEnabled: $shuffleEnabled, repeatEnabled: $repeatEnabled, songDisplayMode: $songDisplayMode)
                         
                         if showPlaylist {
                             PlaylistView(playlistSize: $playlistSize)

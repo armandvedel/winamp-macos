@@ -57,6 +57,10 @@ alternatively
 ./build.sh --release
 ```
 
+# Releases
+
+[v1.0.0](./releases/Winamp-1.0.0.dmg)
+
 ## Support
 
 If you enjoy using Winamp macOS and would like to support its development, consider buying me a coffee:

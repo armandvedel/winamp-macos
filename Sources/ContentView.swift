@@ -51,7 +51,7 @@ struct ContentView: View {
         .ignoresSafeArea(.all)
         .onAppear {
             setupWindow()
-            loadStartupSound()
+            // loadStartupSound()
             loadPlaylistSize()
             loadDisplayMode()
             loadTimeDisplayPreference()

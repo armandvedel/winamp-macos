@@ -1,5 +1,26 @@
 import Foundation
 import AVFoundation
+import Darwin
+
+// MARK: - Network Volume Detection
+
+/// Determines if a URL points to a file on a network volume
+/// Uses statfs system call to check the MNT_LOCAL flag
+private func isNetworkVolume(_ url: URL) -> Bool {
+    var stat = statfs()
+    let path = url.path
+    // statfs requires a C string (null-terminated)
+    let result = path.withCString { cString in
+        statfs(cString, &stat)
+    }
+    guard result == 0 else {
+        // If statfs fails, fall back to path-based check
+        return url.path.hasPrefix("/Volumes/")
+    }
+    // MNT_LOCAL flag indicates local filesystem
+    // If the flag is not set, it's a network volume
+    return (stat.f_flags & UInt32(MNT_LOCAL)) == 0
+}
 
 struct Track: Identifiable, Equatable {
     let id = UUID()
@@ -54,11 +75,50 @@ struct Track: Identifiable, Equatable {
         // Get duration
         trackDuration = CMTimeGetSeconds(asset.duration)
         
-        // Get file size
+        // Get file size - use multiple methods for network volumes
         var fileSize: Int64 = 0
-        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attributes[.size] as? Int64 {
-            fileSize = size
+        let isNetwork = isNetworkVolume(url)
+        
+        // Method 1: Try resource values API (works well with network volumes)
+        do {
+            let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey])
+            if let size = resourceValues.fileSize {
+                fileSize = Int64(size)
+            }
+        } catch {
+            // Continue to fallback
+        }
+        
+        // Method 2: If resource values didn't work, try attributesOfItem
+        if fileSize == 0 {
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                if let size = attributes[.size] as? Int64 {
+                    fileSize = size
+                } else if let size = attributes[.size] as? NSNumber {
+                    fileSize = size.int64Value
+                } else if let size = attributes[.size] as? UInt64 {
+                    fileSize = Int64(size)
+                }
+            } catch {
+                // Continue to next method
+            }
+        }
+        
+        // Method 3: For network volumes, try file handle (most reliable)
+        if fileSize == 0 && isNetwork {
+            do {
+                let fileHandle = try FileHandle(forReadingFrom: url)
+                defer { try? fileHandle.close() }
+                let endOffset = try fileHandle.seekToEnd()
+                fileSize = Int64(endOffset)
+            } catch {
+                print("⚠️ Could not get file size for network volume file: \(url.path) - \(error.localizedDescription)")
+            }
+        }
+        
+        if fileSize == 0 && isNetwork {
+            print("⚠️ Could not get file size for network volume file: \(url.path)")
         }
         
         self.title = trackTitle

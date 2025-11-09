@@ -14,6 +14,10 @@ struct MainPlayerView: View {
     
     @State private var seekDragging = false
     @State private var seekDragPercent: Double = 0
+    @AppStorage("visualizationMode") private var visualizationMode: Int = 0
+    @State private var showingSongInfo = false
+    @State private var autoToggleMode = false
+    @State private var autoToggleTimer: Timer?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -58,10 +62,87 @@ struct MainPlayerView: View {
                         .padding(.vertical, 3)
                         .background(Color.black)
                         
-                        // Spectrum visualizer in dark box
-                        ClassicVisualizerView()
-                            .frame(height: 42)
-                            .background(Color.black)
+                        // Spectrum visualizer with letters on the left
+                        HStack(spacing: 0) {
+                            // Letters vertically on the left
+                            VStack(spacing: 0) {
+                                Button(action: {
+                                    visualizationMode = 1 // Oscilloscope
+                                }) {
+                                    Text("O")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundColor(Color(white: 0.4))
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Button(action: {
+                                    visualizationMode = 0 // Analyzer bars
+                                }) {
+                                    Text("A")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundColor(Color(white: 0.4))
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Button(action: {
+                                    showingSongInfo = true
+                                    // Hide after 3 seconds
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                        showingSongInfo = false
+                                    }
+                                }) {
+                                    Text("I")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundColor(Color(white: 0.4))
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Text("D")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(Color(white: 0.4))
+                                
+                                Button(action: {
+                                    autoToggleMode.toggle()
+                                    if autoToggleMode {
+                                        startAutoToggle()
+                                    } else {
+                                        stopAutoToggle()
+                                    }
+                                }) {
+                                    Text("U")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundColor(Color(white: 0.4))
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Text("V")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(Color(white: 0.4))
+                            }
+                            .frame(width: 14)
+                            .padding(.leading, 4)
+                            .offset(y: -15)
+                            
+                            // Blue dotted vertical line separator
+                            Canvas { context, size in
+                                let dotSpacing: CGFloat = 3
+                                let dotSize: CGFloat = 1
+                                for y in stride(from: 0, to: size.height, by: dotSpacing) {
+                                    let dotRect = CGRect(x: 0, y: y, width: dotSize, height: dotSize)
+                                    context.fill(
+                                        Path(ellipseIn: dotRect),
+                                        with: .color(Color(red: 0.2, green: 0.4, blue: 0.8))
+                                    )
+                                }
+                            }
+                            .frame(width: 1)
+                            
+                            // Visualizer
+                            ClassicVisualizerView()
+                                .background(Color.black)
+                        }
+                        .frame(height: 42)
+                        .background(Color.black)
                     }
                     .frame(width: 185)
                     .background(Color.black)
@@ -86,16 +167,33 @@ struct MainPlayerView: View {
                     
                     // RIGHT: Song info, bitrate, sliders, and buttons
                     VStack(spacing: 4) {
-                    // Song title display with animated visualization
-                    AnimatedSongDisplay(
-                        artist: playlistManager.currentTrack?.artist ?? "DJ Mike Llama",
-                        title: playlistManager.currentTrack?.title ?? "Llama Whippin' Intro",
-                        trackId: playlistManager.currentTrack?.id,
-                        displayMode: $songDisplayMode
-                    )
-                    .frame(height: 24)
-                    .background(Color(red: 0.1, green: 0.12, blue: 0.18))
-                    .cornerRadius(3)
+                    // Song title display with animated visualization or song info
+                    if showingSongInfo {
+                        // Show song information
+                        VStack(spacing: 2) {
+                            Text("\(audioPlayer.currentBitrate) kbps • \(Int(audioPlayer.currentSampleRate / 1000)) kHz")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(WinampColors.displayText)
+                            Text("\(audioPlayer.currentChannels) channel\(audioPlayer.currentChannels > 1 ? "s" : "")")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(Color.white.opacity(0.7))
+                        }
+                        .frame(height: 24)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(red: 0.1, green: 0.12, blue: 0.18))
+                        .cornerRadius(3)
+                    } else {
+                        // Normal song title display
+                        AnimatedSongDisplay(
+                            artist: playlistManager.currentTrack?.artist ?? "DJ Mike Llama",
+                            title: playlistManager.currentTrack?.title ?? "Llama Whippin' Intro",
+                            trackId: playlistManager.currentTrack?.id,
+                            displayMode: $songDisplayMode
+                        )
+                        .frame(height: 24)
+                        .background(Color(red: 0.1, green: 0.12, blue: 0.18))
+                        .cornerRadius(3)
+                    }
                         
                         // Bitrate and format info row
                         HStack(spacing: 4) {
@@ -338,6 +436,9 @@ struct MainPlayerView: View {
         .frame(width: 450, height: 160)
         .background(WinampColors.mainBg)
         .ignoresSafeArea(.all, edges: .top)
+        .onDisappear {
+            stopAutoToggle()
+        }
     }
     
     private func formatTime(_ time: TimeInterval, showNegative: Bool = false) -> String {
@@ -346,6 +447,18 @@ struct MainPlayerView: View {
         let seconds = Int(absTime) % 60
         let prefix = showNegative ? "-" : ""
         return String(format: "%@%d:%02d", prefix, minutes, seconds)
+    }
+    
+    private func startAutoToggle() {
+        // Toggle every 5 seconds
+        autoToggleTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+            visualizationMode = visualizationMode == 0 ? 1 : 0
+        }
+    }
+    
+    private func stopAutoToggle() {
+        autoToggleTimer?.invalidate()
+        autoToggleTimer = nil
     }
 }
 

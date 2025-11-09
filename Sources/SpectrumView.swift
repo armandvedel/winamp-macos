@@ -106,7 +106,7 @@ struct ClassicVisualizerView: View {
             let dotSpacing: CGFloat = 3
             let dotSize: CGFloat = 1
             for i in stride(from: 0, to: canvasSize.width, by: dotSpacing) {
-                let dotRect = CGRect(x: i, y: canvasSize.height - 1, width: dotSize, height: dotSize)
+                let dotRect = CGRect(x: i, y: canvasSize.height - 2, width: dotSize, height: dotSize)
                 context.fill(
                     Path(ellipseIn: dotRect),
                     with: .color(Color(red: 0.2, green: 0.4, blue: 0.8))
@@ -197,6 +197,17 @@ struct ClassicVisualizerView: View {
                 centerLine.move(to: CGPoint(x: 0, y: centerY))
                 centerLine.addLine(to: CGPoint(x: canvasSize.width, y: centerY))
                 context.stroke(centerLine, with: .color(Color(red: 0.2, green: 0.4, blue: 0.8).opacity(0.5)), lineWidth: 1)
+                
+                // Draw blue dotted baseline at the bottom (boundary marker)
+                let dotSpacing: CGFloat = 3
+                let dotSize: CGFloat = 1
+                for i in stride(from: 0, to: canvasSize.width, by: dotSpacing) {
+                    let dotRect = CGRect(x: i, y: canvasSize.height - 2, width: dotSize, height: dotSize)
+                    context.fill(
+                        Path(ellipseIn: dotRect),
+                        with: .color(Color(red: 0.2, green: 0.4, blue: 0.8))
+                    )
+                }
             }
             .onChange(of: audioPlayer.spectrumData) { newData in
                 updateWaveformBuffer(spectrumData: newData)

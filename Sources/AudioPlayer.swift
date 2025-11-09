@@ -14,6 +14,9 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var spectrumData: [Float] = Array(repeating: 0, count: 20)
     @Published var currentLyrics: [LyricLine] = []
     @Published var currentLyricText: String?
+    @Published var currentBitrate: Int = 128
+    @Published var currentSampleRate: Double = 44100
+    @Published var currentChannels: Int = 2
     
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
@@ -186,10 +189,20 @@ class AudioPlayer: NSObject, ObservableObject {
             do {
                 let newFile = try AVAudioFile(forReading: url)
                 let newDuration = Double(newFile.length) / newFile.fileFormat.sampleRate
+                let format = newFile.fileFormat
+                
+                // Extract audio info
+                let sampleRate = format.sampleRate
+                let channels = Int(format.channelCount)
+                // Estimate bitrate (actual bitrate varies, this is an approximation)
+                let bitrate = Int((sampleRate * Double(channels) * 16) / 1000) // Approximate for 16-bit audio
                 
                 DispatchQueue.main.async {
                     self.audioFile = newFile
                     self.duration = newDuration
+                    self.currentSampleRate = sampleRate
+                    self.currentChannels = channels
+                    self.currentBitrate = bitrate
                     self.updateNowPlayingInfo()
                 }
                 print("Track loaded successfully, duration: \(newDuration)")

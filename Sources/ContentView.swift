@@ -8,7 +8,6 @@ struct ContentView: View {
     @State private var showEqualizer = false
     @State private var isShadeMode = false
     @State private var showVisualization = false
-    @State private var contentHeight: CGFloat = 450
     @State private var visualizerFullscreen = false
     @State private var playlistSize: CGSize = CGSize(width: 450, height: 250)
     @State private var shuffleEnabled = false
@@ -38,24 +37,16 @@ struct ContentView: View {
                     }
                 }
                 .frame(width: 450)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: HeightPreferenceKey.self, value: geo.size.height)
-                    }
-                )
             }
             
             // Milkdrop visualization window (right side)
             if showVisualization {
                 MilkdropVisualizerView(isFullscreen: $visualizerFullscreen)
-                    .frame(width: visualizerFullscreen ? nil : 600, height: visualizerFullscreen ? nil : max(contentHeight, 450))
+                    .frame(width: visualizerFullscreen ? nil : 600, height: visualizerFullscreen ? nil : 450)
                     .frame(maxWidth: visualizerFullscreen ? .infinity : nil, maxHeight: visualizerFullscreen ? .infinity : nil)
             }
         }
-        .onPreferenceChange(HeightPreferenceKey.self) { height in
-            contentHeight = height
-        }
-        .fixedSize(horizontal: !visualizerFullscreen, vertical: !visualizerFullscreen)
+        .fixedSize() // Let SwiftUI determine the exact size needed
         .background(Color.black)
         .ignoresSafeArea(.all)
         .onAppear {
@@ -72,45 +63,16 @@ struct ContentView: View {
         .onChange(of: showRemainingTime) { newValue in
             saveTimeDisplayPreference(newValue)
         }
-        .onChange(of: showEqualizer) { _ in
-            // Resize window when equalizer is shown/hidden
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                resizeWindowKeepingTopPosition()
-            }
-        }
-        .onChange(of: showPlaylist) { _ in
-            // Resize window when playlist is shown/hidden
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                resizeWindowKeepingTopPosition()
-            }
-        }
-        .onChange(of: playlistMinimized) { _ in
-            // Resize window when playlist is minimized/expanded
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                resizeWindowKeepingTopPosition()
-            }
-        }
         .onChange(of: isShadeMode) { newValue in
-            // Force window to resize when toggling shade mode
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                resizeWindowKeepingTopPosition()
-                
-                if let window = NSApplication.shared.windows.first {
-                    // When in shade mode, keep window on top of all other windows
-                    if newValue {
-                        window.level = .floating
-                        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                    } else {
-                        window.level = .normal
-                        window.collectionBehavior = []
-                    }
+            if let window = NSApplication.shared.windows.first {
+                // When in shade mode, keep window on top of all other windows
+                if newValue {
+                    window.level = .floating
+                    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+                } else {
+                    window.level = .normal
+                    window.collectionBehavior = []
                 }
-            }
-        }
-        .onChange(of: showVisualization) { _ in
-            // Resize window when toggling visualization
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                resizeWindowKeepingTopPosition()
             }
         }
     }
@@ -121,41 +83,6 @@ struct ContentView: View {
             for window in NSApplication.shared.windows {
                 configureWindow(window)
             }
-        }
-    }
-    
-    private func resizeWindowKeepingTopPosition() {
-        guard let window = NSApplication.shared.windows.first,
-              let contentView = window.contentView else { return }
-        
-        let currentFrame = window.frame
-        let fittingSize = contentView.fittingSize
-        
-        // Only resize if the size actually changed
-        guard abs(currentFrame.height - fittingSize.height) > 1 || 
-              abs(currentFrame.width - fittingSize.width) > 1 else { return }
-        
-        // Store the top Y position (in screen coordinates, Y increases upward)
-        let topY = currentFrame.origin.y + currentFrame.height
-        
-        // Set the new content size
-        window.setContentSize(fittingSize)
-        
-        // Get the new frame after resizing
-        let newFrame = window.frame
-        
-        // Calculate the new origin to keep the top at the same position
-        let newOriginY = topY - newFrame.height
-        
-        // Only reposition if the new origin is reasonable (not forced off-screen)
-        // Allow some tolerance for positioning
-        if let screen = window.screen {
-            let minY = screen.visibleFrame.minY - 50 // Allow 50pts below visible frame
-            if newOriginY >= minY {
-                window.setFrameOrigin(NSPoint(x: currentFrame.origin.x, y: newOriginY))
-            }
-        } else {
-            window.setFrameOrigin(NSPoint(x: currentFrame.origin.x, y: newOriginY))
         }
     }
     
@@ -181,7 +108,8 @@ struct ContentView: View {
     }
     
     private func configureWindow(_ window: NSWindow) {
-        // Make window completely frameless - remove ALL macOS chrome
+        // Make window completely frameless - no macOS chrome
+        // NOTE: We use a custom KeyableWindow class that can accept keyboard input without .titled
         window.styleMask.remove(.titled)
         window.styleMask.remove(.closable)
         window.styleMask.remove(.miniaturizable)
@@ -211,13 +139,7 @@ struct ContentView: View {
         window.hasShadow = true
         window.isMovableByWindowBackground = false
         
-        // Set exact content size
-        if let contentView = window.contentView {
-            let fittingSize = contentView.fittingSize
-            window.setContentSize(NSSize(width: 275, height: fittingSize.height))
-        }
-        
-        // Position window below menu bar
+        // Position window below menu bar (but don't set size here)
         if let screen = window.screen {
             let screenFrame = screen.visibleFrame
             let windowFrame = window.frame
@@ -228,9 +150,6 @@ struct ContentView: View {
             
             window.setFrameOrigin(NSPoint(x: x, y: y))
         }
-        
-        // Don't force a specific size - let it adjust based on content
-        window.setContentSize(window.contentView?.fittingSize ?? NSSize(width: 450, height: 400))
     }
     
     private func loadPlaylistSize() {
@@ -302,12 +221,3 @@ struct ContentView: View {
         }
     }
 }
-
-// Preference key to track content height
-struct HeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-

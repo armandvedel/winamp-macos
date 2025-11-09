@@ -1795,20 +1795,39 @@ class KeyHandlerView: NSView {
     var onFullscreenToggle: (() -> Void)?
     
     override var acceptsFirstResponder: Bool { true }
-    override var canBecomeKeyView: Bool { true }
+    override var canBecomeKeyView: Bool { 
+        // Don't become key view if a text field is active
+        return !isTextFieldFirstResponder()
+    }
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
+        // Only become first responder if no text field is currently editing
+        if !isTextFieldFirstResponder() {
+            window?.makeFirstResponder(self)
+        }
     }
     
     override func layout() {
         super.layout()
-        // Ensure we become first responder when layout changes (like going fullscreen)
-        window?.makeFirstResponder(self)
+        // Don't steal focus during layout changes if a text field is active
+        // This was causing the playlist search box to lose keyboard input
+    }
+    
+    private func isTextFieldFirstResponder() -> Bool {
+        guard let firstResponder = window?.firstResponder else { return false }
+        // Check if the first responder is a text field or text view
+        return firstResponder is NSText || firstResponder is NSTextView || firstResponder is NSTextField
     }
     
     override func keyDown(with event: NSEvent) {
+        // If a text field is currently editing, don't intercept ANY keyboard events
+        if isTextFieldFirstResponder() {
+            // Pass to next responder in chain
+            self.nextResponder?.keyDown(with: event)
+            return
+        }
+        
         if event.keyCode == 53 { // Escape key
             onEscape?()
         } else if event.keyCode == 3 { // F key (keyCode 3)

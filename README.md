@@ -2,9 +2,18 @@
 
 A native macOS application that recreates the classic Winamp experience for playing MP3 and FLAC audio files.
 
+## Full Screen
+
 ![Fullscreen Visualizer](fullscreen.png)
 
+<img width="1051" height="633" alt="Screenshot 2025-11-09 at 3 37 26 PM" src="https://github.com/user-attachments/assets/a28d06b8-e427-4ed4-9547-84072368907a" />
+
+
+## Minimized (
+
 ![Minimized Playlist](minimized.png)
+
+
 
 ## Features
 
@@ -15,6 +24,10 @@ A native macOS application that recreates the classic Winamp experience for play
 - 📊 Spectrum analyzer visualization
 - 🎚️ 10-band equalizer
 - 🔍 File browser with drag-and-drop support
+
+- Multiple oscilliscope visualizations
+- Milkdrop (click on the icon in the main app) - supports fullscreen mode
+- Lyrics overlay in Milkdrop
 
 ## Requirements
 

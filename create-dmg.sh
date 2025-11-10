@@ -6,7 +6,19 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_NAME="Winamp"
-VERSION="1.0.0"
+
+# Get version from command line argument or extract from Xcode project
+if [ -n "$1" ]; then
+    VERSION="$1"
+else
+    # Extract MARKETING_VERSION from Xcode project
+    VERSION=$(grep -A 1 "MARKETING_VERSION" "${PROJECT_DIR}/${PROJECT_NAME}.xcodeproj/project.pbxproj" | grep -oE "[0-9]+\.[0-9]+(\.[0-9]+)?" | head -n 1)
+    if [ -z "$VERSION" ]; then
+        echo "❌ Could not determine version. Please provide version as argument or ensure MARKETING_VERSION is set in Xcode project."
+        exit 1
+    fi
+fi
+
 DMG_NAME="${PROJECT_NAME}-${VERSION}"
 BUILD_DIR="${PROJECT_DIR}/dmg-build"
 RELEASE_DIR="${PROJECT_DIR}/release"
@@ -28,29 +40,43 @@ fi
 mkdir -p "$BUILD_DIR"
 mkdir -p "$RELEASE_DIR"
 
-# Step 1: Build the release version
+# Step 1: Build the release version (skip if already built)
 echo "🔨 Building release version..."
-xcodebuild -project "${PROJECT_DIR}/${PROJECT_NAME}.xcodeproj" \
-           -scheme "${PROJECT_NAME}" \
-           -configuration Release \
-           clean build
+if [ "$SKIP_BUILD" != "true" ]; then
+    xcodebuild -project "${PROJECT_DIR}/${PROJECT_NAME}.xcodeproj" \
+               -scheme "${PROJECT_NAME}" \
+               -configuration Release \
+               clean build
 
-if [ $? -ne 0 ]; then
-    echo "❌ Build failed!"
-    exit 1
+    if [ $? -ne 0 ]; then
+        echo "❌ Build failed!"
+        exit 1
+    fi
+else
+    echo "⏭️  Skipping build (SKIP_BUILD=true)"
 fi
 
 # Step 2: Find and copy the built app
 echo ""
 echo "📦 Locating built application..."
-APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/${PROJECT_NAME}-*/Build/Products/Release/${PROJECT_NAME}.app -maxdepth 0 2>/dev/null | head -n 1)
-
-if [ -z "$APP_PATH" ]; then
-    echo "❌ Could not find built application!"
-    exit 1
+# Use provided path or search in DerivedData
+if [ -n "$BUILD_OUTPUT_DIR" ] && [ -d "$BUILD_OUTPUT_DIR" ]; then
+    APP_PATH="$BUILD_OUTPUT_DIR"
+    echo "✅ Using provided app path: $APP_PATH"
+else
+    # Try to find in DerivedData
+    APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/${PROJECT_NAME}-*/Build/Products/Release/${PROJECT_NAME}.app -maxdepth 0 2>/dev/null | head -n 1)
+    if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+        echo "❌ Could not find built application!"
+        echo "   Searched in: ~/Library/Developer/Xcode/DerivedData/"
+        if [ -n "$BUILD_OUTPUT_DIR" ]; then
+            echo "   And in: $BUILD_OUTPUT_DIR"
+        fi
+        exit 1
+    fi
+    echo "✅ Found in DerivedData: $APP_PATH"
 fi
 
-echo "✅ Found: $APP_PATH"
 echo ""
 echo "📋 Copying to DMG staging area..."
 cp -R "$APP_PATH" "$BUILD_DIR/"

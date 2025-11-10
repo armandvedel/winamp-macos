@@ -28,9 +28,26 @@ class PlaylistManager: ObservableObject {
     
     @Published var tracks: [Track] = []
     @Published var currentIndex: Int = -1
+    @Published var shuffleEnabled: Bool = false {
+        didSet {
+            if shuffleEnabled {
+                // Generate shuffle order when enabled
+                generateShuffledIndices()
+            } else {
+                // Clear shuffle order when disabled
+                shuffledIndices.removeAll()
+                shuffleCurrentIndex = 0
+            }
+        }
+    }
+    @Published var repeatEnabled: Bool = false
     
     private var cancellables = Set<AnyCancellable>()
     private var isLoadingTrack = false
+    
+    // Shuffle management
+    private var shuffledIndices: [Int] = []
+    private var shuffleCurrentIndex: Int = 0
     
     // Security-scoped bookmark management
     private var activeSecurityScopes: Set<URL> = []
@@ -74,6 +91,11 @@ class PlaylistManager: ObservableObject {
             let wasEmpty = self.tracks.isEmpty
             self.tracks.append(contentsOf: newTracks)
             
+            // Regenerate shuffle order if shuffle is enabled
+            if self.shuffleEnabled {
+                self.generateShuffledIndices()
+            }
+            
             // Only auto-play if playlist was empty
             if wasEmpty && !self.tracks.isEmpty {
                 // Delay slightly to ensure UI updates complete
@@ -87,6 +109,11 @@ class PlaylistManager: ObservableObject {
     func removeTrack(at index: Int) {
         guard index >= 0 && index < tracks.count else { return }
         tracks.remove(at: index)
+        
+        // Regenerate shuffle order if shuffle is enabled
+        if shuffleEnabled {
+            generateShuffledIndices()
+        }
         
         if tracks.isEmpty {
             currentIndex = -1
@@ -104,6 +131,8 @@ class PlaylistManager: ObservableObject {
         // so that saved playlists can still access files on next launch
         tracks.removeAll()
         currentIndex = -1
+        shuffledIndices.removeAll()
+        shuffleCurrentIndex = 0
         AudioPlayer.shared.stop()
     }
     
@@ -284,6 +313,17 @@ class PlaylistManager: ObservableObject {
         
         isLoadingTrack = true
         currentIndex = index
+        
+        // Update shuffle position if shuffle is enabled
+        if shuffleEnabled {
+            if let shufflePos = shuffledIndices.firstIndex(of: index) {
+                shuffleCurrentIndex = shufflePos
+            } else {
+                // Current track not in shuffle list, regenerate
+                generateShuffledIndices()
+            }
+        }
+        
         let track = tracks[index]
         AudioPlayer.shared.loadTrack(track)
         
@@ -296,14 +336,101 @@ class PlaylistManager: ObservableObject {
     
     func next() {
         guard !tracks.isEmpty else { return }
-        let nextIndex = (currentIndex + 1) % tracks.count
-        playTrack(at: nextIndex)
+        
+        if shuffleEnabled {
+            // Use shuffled order
+            if shuffledIndices.isEmpty {
+                generateShuffledIndices()
+            }
+            
+            shuffleCurrentIndex += 1
+            
+            // If we've reached the end of the shuffled list
+            if shuffleCurrentIndex >= shuffledIndices.count {
+                if repeatEnabled {
+                    // Regenerate shuffle order and start over
+                    generateShuffledIndices()
+                    shuffleCurrentIndex = 0
+                } else {
+                    // Stop playback at end of playlist
+                    AudioPlayer.shared.stop()
+                    return
+                }
+            }
+            
+            let nextIndex = shuffledIndices[shuffleCurrentIndex]
+            playTrack(at: nextIndex)
+        } else {
+            // Normal sequential order
+            let nextIndex = currentIndex + 1
+            
+            if nextIndex >= tracks.count {
+                // Reached end of playlist
+                if repeatEnabled {
+                    // Loop back to beginning
+                    playTrack(at: 0)
+                } else {
+                    // Stop playback
+                    AudioPlayer.shared.stop()
+                }
+            } else {
+                playTrack(at: nextIndex)
+            }
+        }
     }
     
     func previous() {
         guard !tracks.isEmpty else { return }
-        let prevIndex = currentIndex > 0 ? currentIndex - 1 : tracks.count - 1
-        playTrack(at: prevIndex)
+        
+        if shuffleEnabled {
+            // Use shuffled order
+            if shuffledIndices.isEmpty {
+                generateShuffledIndices()
+            }
+            
+            shuffleCurrentIndex -= 1
+            
+            if shuffleCurrentIndex < 0 {
+                if repeatEnabled {
+                    // Wrap to end of shuffled list
+                    shuffleCurrentIndex = shuffledIndices.count - 1
+                } else {
+                    // Stay at current track (can't go before first)
+                    shuffleCurrentIndex = 0
+                    return
+                }
+            }
+            
+            let prevIndex = shuffledIndices[shuffleCurrentIndex]
+            playTrack(at: prevIndex)
+        } else {
+            // Normal sequential order
+            let prevIndex = currentIndex > 0 ? currentIndex - 1 : (repeatEnabled ? tracks.count - 1 : 0)
+            playTrack(at: prevIndex)
+        }
+    }
+    
+    private func generateShuffledIndices() {
+        // Generate a shuffled list of indices, ensuring current track is first
+        var indices = Array(0..<tracks.count)
+        
+        // Remove current index from the list
+        if currentIndex >= 0 && currentIndex < indices.count {
+            indices.remove(at: currentIndex)
+        }
+        
+        // Shuffle the remaining indices
+        indices.shuffle()
+        
+        // Put current index at the beginning
+        if currentIndex >= 0 && currentIndex < tracks.count {
+            shuffledIndices = [currentIndex] + indices
+        } else {
+            shuffledIndices = indices
+        }
+        
+        shuffleCurrentIndex = 0
+        print("🔀 Generated shuffled order: \(shuffledIndices)")
     }
     
     func showFilePicker() {

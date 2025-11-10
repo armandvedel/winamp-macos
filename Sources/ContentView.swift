@@ -10,8 +10,6 @@ struct ContentView: View {
     @State private var showVisualization = false
     @State private var visualizerFullscreen = false
     @State private var playlistSize: CGSize = CGSize(width: 450, height: 250)
-    @State private var shuffleEnabled = false
-    @State private var repeatEnabled = false
     @State private var songDisplayMode: DisplayMode = .scrolling
     @State private var showRemainingTime = false
     @State private var playlistMinimized = false
@@ -24,7 +22,13 @@ struct ContentView: View {
                     if isShadeMode {
                         ShadeView(isShadeMode: $isShadeMode, songDisplayMode: $songDisplayMode, showRemainingTime: $showRemainingTime)
                     } else {
-                        MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization, shuffleEnabled: $shuffleEnabled, repeatEnabled: $repeatEnabled, songDisplayMode: $songDisplayMode, showRemainingTime: $showRemainingTime)
+                        MainPlayerView(showPlaylist: $showPlaylist, showEqualizer: $showEqualizer, isShadeMode: $isShadeMode, showVisualization: $showVisualization, shuffleEnabled: Binding(
+                            get: { playlistManager.shuffleEnabled },
+                            set: { playlistManager.shuffleEnabled = $0 }
+                        ), repeatEnabled: Binding(
+                            get: { playlistManager.repeatEnabled },
+                            set: { playlistManager.repeatEnabled = $0 }
+                        ), songDisplayMode: $songDisplayMode, showRemainingTime: $showRemainingTime)
                         
                         if showEqualizer {
                             EqualizerView()

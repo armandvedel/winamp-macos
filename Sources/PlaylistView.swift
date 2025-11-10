@@ -662,10 +662,8 @@ class PlaylistRowClickView: NSView {
         // Only handle left clicks
         if event.type == .leftMouseDown {
             if event.clickCount == 2 {
-                print("🖱️ NSView detected double-click!")
                 onDoubleClick?()
             } else if event.clickCount == 1 {
-                print("🖱️ NSView detected single-click!")
                 onSingleClick?()
             }
         } else {
@@ -676,7 +674,6 @@ class PlaylistRowClickView: NSView {
     
     override func rightMouseDown(with event: NSEvent) {
         // Pass through right-clicks for context menu
-        print("🖱️ Right-click detected, passing through")
         super.rightMouseDown(with: event)
     }
     

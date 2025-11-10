@@ -167,7 +167,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let win = customWindow else { return }
 
             guard let closeBtnSuperview = win.standardWindowButton(.closeButton)?.superview else {
-                NSLog("WinampApp: could not find close button superview; leaving accessory left-aligned")
                 return
             }
 

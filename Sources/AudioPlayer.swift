@@ -62,7 +62,7 @@ class AudioPlayer: NSObject, ObservableObject {
         do {
             try engine.start()
         } catch {
-            print("Failed to start audio engine: \(error)")
+            // Failed to start audio engine
         }
     }
     
@@ -145,7 +145,6 @@ class AudioPlayer: NSObject, ObservableObject {
             
             // Completely destroy and recreate the player node to ensure clean state
             if let player = self.playerNode, let engine = self.audioEngine, let _ = self.eqNode {
-                print("Destroying old player node")
                 engine.disconnectNodeOutput(player)
                 engine.detach(player)
                 player.stop()
@@ -153,7 +152,6 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             
             // Create a fresh player node
-            print("Creating fresh player node")
             self.playerNode = AVAudioPlayerNode()
             
             // Reattach to engine
@@ -182,7 +180,6 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             
             guard let url = track.url else { 
-                print("Track URL is nil")
                 return 
             }
             
@@ -205,9 +202,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     self.currentBitrate = bitrate
                     self.updateNowPlayingInfo()
                 }
-                print("Track loaded successfully, duration: \(newDuration)")
             } catch {
-                print("Failed to load audio file: \(error)")
                 DispatchQueue.main.async {
                     self.audioFile = nil
                 }
@@ -232,8 +227,6 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     func play() {
-        print("=== Play called ===")
-        
         // Execute on audio queue to ensure serialization
         audioQueue.async { [weak self] in
             guard let self = self else { return }
@@ -241,13 +234,11 @@ class AudioPlayer: NSObject, ObservableObject {
             guard let player = self.playerNode,
                   let file = self.audioFile,
                   let engine = self.audioEngine else { 
-                print("Play failed: missing player, file, or engine")
                 return 
             }
             
             // If already playing, don't schedule again
             if self.isPlaying {
-                print("Already playing, ignoring")
                 return
             }
             
@@ -255,15 +246,12 @@ class AudioPlayer: NSObject, ObservableObject {
             if !engine.isRunning {
                 do {
                     try engine.start()
-                    print("Engine started")
                 } catch {
-                    print("Failed to start engine: \(error)")
                     return
                 }
             }
             
             // CRITICAL: Ensure player is completely stopped
-            print("Ensuring player is stopped and reset")
             player.stop()
             player.reset()
             
@@ -271,10 +259,8 @@ class AudioPlayer: NSObject, ObservableObject {
             self.shouldAutoAdvance = true
             
             // Schedule the entire file
-            print("Scheduling file for playback")
             player.scheduleFile(file, at: nil) { [weak self] in
                 DispatchQueue.main.async {
-                    print("=== Track completed ===")
                     self?.handleTrackCompletion()
                 }
             }
@@ -287,13 +273,11 @@ class AudioPlayer: NSObject, ObservableObject {
                 self.startTimer()
                 self.updateNowPlayingInfo()
             }
-            print("=== Playback started successfully ===")
         }
     }
     
     func pause() {
         guard isPlaying else { return }
-        print("Pausing playback")
         playerNode?.pause()
         isPlaying = false
         stopTimer()
@@ -302,7 +286,6 @@ class AudioPlayer: NSObject, ObservableObject {
     
     func resume() {
         guard let player = playerNode, !isPlaying else { return }
-        print("Resuming playback")
         player.play()
         isPlaying = true
         startTimer()
@@ -310,7 +293,6 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     func stop() {
-        print("Stopping playback")
         shouldAutoAdvance = false
         playerNode?.stop()
         isPlaying = false

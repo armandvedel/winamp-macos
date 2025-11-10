@@ -113,12 +113,8 @@ struct Track: Identifiable, Equatable {
                 let endOffset = try fileHandle.seekToEnd()
                 fileSize = Int64(endOffset)
             } catch {
-                print("⚠️ Could not get file size for network volume file: \(url.path) - \(error.localizedDescription)")
+                // Could not get file size for network volume file
             }
-        }
-        
-        if fileSize == 0 && isNetwork {
-            print("⚠️ Could not get file size for network volume file: \(url.path)")
         }
         
         self.title = trackTitle

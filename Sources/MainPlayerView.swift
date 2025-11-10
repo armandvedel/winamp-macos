@@ -1766,11 +1766,8 @@ struct MilkdropVisualizerView: View {
             }
             
             guard let screen = targetScreen else {
-                print("⚠️ Could not determine target screen for fullscreen")
                 return
             }
-            
-            print("📺 Fullscreen on screen: \(screen.frame) (Total screens: \(allScreens.count))")
             
             if !self.isFullscreen {
                 // Store original frame before going fullscreen
@@ -1781,9 +1778,6 @@ struct MilkdropVisualizerView: View {
                 
                 // Get the screen's full frame (covers entire screen including menu bar area)
                 let screenFrame = screen.frame
-                
-                print("📺 Going fullscreen on screen: origin=\(screenFrame.origin), size=\(screenFrame.size)")
-                print("📺 Window current frame: \(windowFrame)")
                 
                 // Set window to exactly match the screen's frame immediately
                 // This ensures it only fullscreens on the current monitor
@@ -1799,14 +1793,12 @@ struct MilkdropVisualizerView: View {
                             var newFrame = screenFrame
                             newFrame.origin = screen.frame.origin
                             window.setFrame(newFrame, display: true, animate: false)
-                            print("📺 Corrected window position to target screen")
                         }
                     }
                     
                     // Ensure window fills the entire screen
                     let currentFrame = window.frame
                     if currentFrame != screenFrame {
-                        print("📺 Correcting window frame from \(currentFrame) to \(screenFrame)")
                         window.setFrame(screenFrame, display: true, animate: false)
                     }
                 }

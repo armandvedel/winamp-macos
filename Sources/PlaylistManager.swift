@@ -157,8 +157,6 @@ class PlaylistManager: ObservableObject {
                 activeSecurityScopes.insert(url)
             }
             
-            print("✅ Saved security-scoped bookmark for: \(url.path)")
-            
             // For network volumes, also try to save bookmarks for parent directories
             // This helps when loading playlists that reference files on the same volume
             if isNetworkVolume(url) {
@@ -198,7 +196,6 @@ class PlaylistManager: ObservableObject {
                                 if currentPath.startAccessingSecurityScopedResource() {
                                     activeSecurityScopes.insert(currentPath)
                                 }
-                                print("✅ Saved security-scoped bookmark for network volume directory: \(currentPath.path)")
                             } catch {
                                 // Can't create bookmark for parent, that's okay
                                 break
@@ -212,13 +209,12 @@ class PlaylistManager: ObservableObject {
                 }
             }
         } catch {
-            print("⚠️ Failed to create security-scoped bookmark for \(url.path): \(error.localizedDescription)")
+            // Failed to create security-scoped bookmark
         }
     }
     
     private func restoreSecurityScopedBookmarks() {
         guard let bookmarks = UserDefaults.standard.array(forKey: bookmarksKey) as? [Data] else {
-            print("📝 No saved security-scoped bookmarks found")
             return
         }
         
@@ -239,15 +235,12 @@ class PlaylistManager: ObservableObject {
                     if url.startAccessingSecurityScopedResource() {
                         activeSecurityScopes.insert(url)
                         restoredCount += 1
-                        print("✅ Restored security-scoped access for: \(url.path)")
                     }
                 } else {
                     // Remove stale bookmark
                     securityScopedBookmarks.removeAll { $0 == bookmarkData }
-                    print("⚠️ Stale bookmark removed for: \(url.path)")
                 }
             } catch {
-                print("⚠️ Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
                 // Remove invalid bookmark
                 securityScopedBookmarks.removeAll { $0 == bookmarkData }
             }
@@ -255,7 +248,6 @@ class PlaylistManager: ObservableObject {
         
         // Update UserDefaults with cleaned bookmarks
         UserDefaults.standard.set(securityScopedBookmarks, forKey: bookmarksKey)
-        print("📝 Restored \(restoredCount) security-scoped bookmarks")
     }
     
     private func ensureSecurityScopedAccess(for url: URL) -> Bool {
@@ -341,6 +333,7 @@ class PlaylistManager: ObservableObject {
             // Use shuffled order
             if shuffledIndices.isEmpty {
                 generateShuffledIndices()
+                shuffleCurrentIndex = 0
             }
             
             shuffleCurrentIndex += 1
@@ -348,9 +341,14 @@ class PlaylistManager: ObservableObject {
             // If we've reached the end of the shuffled list
             if shuffleCurrentIndex >= shuffledIndices.count {
                 if repeatEnabled {
-                    // Regenerate shuffle order and start over
+                    // Regenerate shuffle order and start over (skip current track at index 0)
                     generateShuffledIndices()
-                    shuffleCurrentIndex = 0
+                    shuffleCurrentIndex = 1  // Start with next track, not the current one
+                    
+                    // If we only have one track, just play it again
+                    if shuffledIndices.count <= 1 {
+                        shuffleCurrentIndex = 0
+                    }
                 } else {
                     // Stop playback at end of playlist
                     AudioPlayer.shared.stop()
@@ -386,6 +384,7 @@ class PlaylistManager: ObservableObject {
             // Use shuffled order
             if shuffledIndices.isEmpty {
                 generateShuffledIndices()
+                shuffleCurrentIndex = 0
             }
             
             shuffleCurrentIndex -= 1
@@ -429,8 +428,8 @@ class PlaylistManager: ObservableObject {
             shuffledIndices = indices
         }
         
-        shuffleCurrentIndex = 0
-        print("🔀 Generated shuffled order: \(shuffledIndices)")
+        // Don't reset shuffleCurrentIndex here - let the caller manage it
+        // This allows us to set it appropriately when regenerating for repeat
     }
     
     func showFilePicker() {
@@ -475,7 +474,6 @@ class PlaylistManager: ObservableObject {
         _ = ensureSecurityScopedAccess(for: url)
         
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            print("❌ Failed to read M3U file: \(url.path)")
             return nil
         }
         
@@ -537,32 +535,21 @@ class PlaylistManager: ObservableObject {
                     let track = Track(url: resolvedURL)
                     tracks.append(track)
                 }
-            } else {
-                print("⚠️ Track not found: \(resolvedURL.path)")
             }
         }
         
-        print("📄 Loaded \(tracks.count) tracks from M3U: \(url.lastPathComponent)")
         return tracks
     }
     
     func saveM3UPlaylist() {
-        print("🎯 SAVE button clicked! Tracks count: \(tracks.count)")
-        
         guard !tracks.isEmpty else {
-            print("⚠️ Cannot save empty playlist - add some tracks first!")
             return
         }
         
-        print("✅ Playlist has tracks, showing save dialog...")
-        
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { 
-                print("❌ Self is nil")
                 return 
             }
-            
-            print("📝 Creating NSSavePanel...")
             
             let panel = NSSavePanel()
             panel.allowedContentTypes = [.init(filenameExtension: "m3u")].compactMap { $0 }
@@ -573,16 +560,10 @@ class PlaylistManager: ObservableObject {
             panel.isExtensionHidden = false
             panel.showsTagField = false
             
-            print("📝 Opening save dialog with runModal()...")
-            
             // Use runModal for immediate display
             let response = panel.runModal()
             
-            print("📝 Dialog closed with response: \(response.rawValue)")
-            
             if response == .OK, let url = panel.url {
-                print("💾 Saving playlist to: \(url.path)")
-                
                 var content = "#EXTM3U\n"
                 for track in self.tracks {
                     // Use absolute paths for reliability
@@ -593,12 +574,9 @@ class PlaylistManager: ObservableObject {
                 
                 do {
                     try content.write(to: url, atomically: true, encoding: .utf8)
-                    print("✅ Successfully saved playlist with \(self.tracks.count) tracks")
                 } catch {
-                    print("❌ Failed to save playlist: \(error.localizedDescription)")
+                    // Failed to save playlist
                 }
-            } else {
-                print("❌ Save cancelled by user")
             }
         }
     }
@@ -619,8 +597,6 @@ class PlaylistManager: ObservableObject {
     }
     
     private func addTracksFromFolder(_ folder: URL) {
-        print("📁 Scanning folder: \(folder.path)")
-        
         // Ensure we have security-scoped access
         _ = ensureSecurityScopedAccess(for: folder)
         
@@ -634,7 +610,6 @@ class PlaylistManager: ObservableObject {
                 includingPropertiesForKeys: [.isRegularFileKey],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
             ) else {
-                print("❌ Failed to create enumerator for folder")
                 return
             }
             
@@ -655,12 +630,8 @@ class PlaylistManager: ObservableObject {
                 }
             }
             
-            print("📁 Found \(fileURLs.count) audio files, creating tracks...")
-            
             // Create tracks from URLs (slower - loads metadata)
             let newTracks = fileURLs.map { Track(url: $0) }
-            
-            print("✅ Created \(newTracks.count) track objects")
             
             // Add tracks on main queue
             self.addTracks(newTracks)

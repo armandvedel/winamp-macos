@@ -14,24 +14,18 @@ class LyricsParser {
            let content = try? String(contentsOf: lrcURL, encoding: .utf8) {
             let lyrics = parseLRC(content)
             if !lyrics.isEmpty {
-                print("📝 Loaded lyrics from local file: \(lrcURL.lastPathComponent)")
                 completion(lyrics)
                 return
             }
         }
         
         // If no local file, try to fetch from LRCLIB API
-        print("🌐 No local lyrics found, fetching from LRCLIB API...")
         fetchLyricsFromAPI(artist: artist, title: title, duration: duration) { lyrics in
             if let lyrics = lyrics {
-                print("✅ Fetched \(lyrics.count) lyrics lines from API")
                 // Optionally save to local file for future use
                 if let lrcContent = formatAsLRC(lyrics) {
                     try? lrcContent.write(to: lrcURL, atomically: true, encoding: .utf8)
-                    print("💾 Saved lyrics to: \(lrcURL.lastPathComponent)")
                 }
-            } else {
-                print("❌ No lyrics found for: \(artist) - \(title)")
             }
             completion(lyrics)
         }
@@ -59,7 +53,6 @@ class LyricsParser {
         
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
-                print("❌ API request failed: \(error?.localizedDescription ?? "unknown error")")
                 completion(nil)
                 return
             }
@@ -73,7 +66,6 @@ class LyricsParser {
                     completion(nil)
                 }
             } catch {
-                print("❌ Failed to parse API response: \(error.localizedDescription)")
                 completion(nil)
             }
         }

@@ -93,11 +93,8 @@ struct ContentView: View {
     private func loadStartupSound() {
         // Load the startup.mp3 from the app bundle
         guard let startupURL = Bundle.main.url(forResource: "startup", withExtension: "mp3") else {
-            print("❌ Could not find startup.mp3 in bundle")
             return
         }
-        
-        print("🎵 Loading startup sound from: \(startupURL.path)")
         
         // Create a track for the startup sound
         let startupTrack = Track(url: startupURL)

@@ -227,47 +227,50 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     func play() {
-        // Execute on audio queue to ensure serialization
         audioQueue.async { [weak self] in
             guard let self = self else { return }
-            
+
             guard let player = self.playerNode,
                   let file = self.audioFile,
                   let engine = self.audioEngine else { 
                 return 
             }
-            
-            // If already playing, don't schedule again
-            if self.isPlaying {
-                return
-            }
-            
-            // Restart engine if needed
-            if !engine.isRunning {
-                do {
-                    try engine.start()
-                } catch {
-                    return
+
+            if self.isPlaying { return }
+
+            // --- WINAMP RESUME LOGIC ---
+            // If we have a file loaded and we aren't at the very start,
+            // it means we are currently paused. Just resume.
+            if self.currentTime > 0 {
+                if !engine.isRunning { try? engine.start() }
+                player.play() // Resumes from current position
+
+                DispatchQueue.main.async {
+                    self.isPlaying = true
+                    self.startTimer()
+                    self.updateNowPlayingInfo()
                 }
+                return // Exit early so we don't hit the stop/reset logic below
             }
-            
-            // CRITICAL: Ensure player is completely stopped
+            // ---------------------------
+
+            if !engine.isRunning {
+                do { try engine.start() } catch { return }
+            }
+
             player.stop()
             player.reset()
-            
-            // Re-enable auto-advance
             self.shouldAutoAdvance = true
-            
-            // Schedule the entire file
+
             player.scheduleFile(file, at: nil) { [weak self] in
                 DispatchQueue.main.async {
                     self?.handleTrackCompletion()
                 }
             }
-            
+
             player.volume = self.volume
             player.play()
-            
+
             DispatchQueue.main.async {
                 self.isPlaying = true
                 self.startTimer()
@@ -277,11 +280,17 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     func pause() {
-        guard isPlaying else { return }
-        playerNode?.pause()
-        isPlaying = false
-        stopTimer()
-        updateNowPlayingInfo()
+        // If we are currently playing, pause it.
+        if isPlaying {
+            playerNode?.pause()
+            isPlaying = false
+            stopTimer()
+        } 
+        // If we are already paused (isPlaying is false) and have a file, 
+        // the Pause button acts as a Resume button.
+        else if audioFile != nil {
+            play() // This will now hit the resume logic we added to play()
+        }
     }
     
     func resume() {

@@ -442,27 +442,24 @@ class PlaylistManager: ObservableObject {
         panel.begin { [weak self] response in
             guard let self = self else { return }
             if response == .OK {
-                // Save security-scoped bookmarks for selected files/folders
-                // This allows persistent access across app restarts
                 for url in panel.urls {
+                    let _ = url.startAccessingSecurityScopedResource() // Standard macOS ritual
                     self.saveSecurityScopedBookmark(for: url)
+                    NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                    url.stopAccessingSecurityScopedResource()
                 }
                 
-                // Create tracks on background queue to avoid blocking
                 DispatchQueue.global(qos: .userInitiated).async {
                     var newTracks: [Track] = []
                     for url in panel.urls {
                         if url.pathExtension.lowercased() == "m3u" {
-                            // Load M3U playlist
                             if let m3uTracks = self.loadM3UPlaylist(from: url) {
                                 newTracks.append(contentsOf: m3uTracks)
                             }
                         } else {
-                            // Regular audio file
                             newTracks.append(Track(url: url))
                         }
                     }
-                    // Add tracks on main queue
                     self.addTracks(newTracks)
                 }
             }

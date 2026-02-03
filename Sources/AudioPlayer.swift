@@ -3,6 +3,7 @@ import AVFoundation
 import Combine
 import MediaPlayer
 
+
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
     
@@ -25,6 +26,10 @@ class AudioPlayer: NSObject, ObservableObject {
     private var timer: Timer?
     private var shouldAutoAdvance = true
     private let audioQueue = DispatchQueue(label: "com.winamp.audio", qos: .userInteractive)
+    
+    
+    private var isSeeking = false
+    private var seekOffset: TimeInterval = 0 // Ensure this is here too
     
     override init() {
         super.init()
@@ -136,6 +141,7 @@ class AudioPlayer: NSObject, ObservableObject {
             
             // CRITICAL: Stop and cleanup everything first
             DispatchQueue.main.async {
+                self.seekOffset = 0 // Add this line
                 self.stopTimer()
                 self.isPlaying = false
             }
@@ -324,37 +330,55 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     func seek(to time: TimeInterval) {
-        guard let file = audioFile,
-              let player = playerNode else { return }
-        
-        let wasPlaying = isPlaying
-        stop()
-        
-        let sampleRate = file.fileFormat.sampleRate
-        let startFrame = AVAudioFramePosition(time * sampleRate)
-        
-        guard startFrame < file.length else { return }
-        
-        player.scheduleSegment(
-            file,
-            startingFrame: startFrame,
-            frameCount: AVAudioFrameCount(file.length - startFrame),
-            at: nil
-        ) { [weak self] in
+        // 1. Immediately signal we are seeking to ignore completion handlers
+        isSeeking = true
+
+        audioQueue.async { [weak self] in
+            guard let self = self,
+                  let file = self.audioFile,
+                  let player = self.playerNode,
+                  let engine = self.audioEngine else { return }
+
+            let wasPlaying = self.isPlaying
+
+            // 2. Stop the node
+            player.stop()
+
+            let sampleRate = file.fileFormat.sampleRate
+            let startFrame = AVAudioFramePosition(time * sampleRate)
+            self.seekOffset = time
+
+            // 3. Schedule segment with a guard in the completion handler
+            player.scheduleSegment(
+                file,
+                startingFrame: startFrame,
+                frameCount: AVAudioFrameCount(file.length - startFrame),
+                at: nil
+            ) { [weak self] in
+                guard let self = self, !self.isSeeking else { return }
+                DispatchQueue.main.async { self.handleTrackCompletion() }
+            }
+
+            player.prepare(withFrameCount: 1024)
+
+            if !engine.isRunning {
+                try? engine.start()
+            }
+
             DispatchQueue.main.async {
-                self?.handleTrackCompletion()
+                self.currentTime = time
+                // Reset the flag after the UI has had a moment to catch up
+                self.isSeeking = false
+
+                if wasPlaying {
+                    player.play()
+                    self.isPlaying = true
+                    self.startTimer()
+                }
             }
         }
-        
-        currentTime = time
-        
-        if wasPlaying {
-            player.play()
-            isPlaying = true
-            startTimer()
-        }
     }
-    
+
     func setVolume(_ newVolume: Float) {
         volume = max(0, min(1, newVolume))
         playerNode?.volume = volume
@@ -366,28 +390,52 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     private func startTimer() {
+        // CRITICAL: Stop any existing timer first
+        stopTimer()
+
+        // Winamp visualizers typically run at 60fps (0.016s) or 30fps (0.033s)
+        // If it's too fast, ensure this interval isn't set too low.
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.updateCurrentTime()
             self?.updateSpectrum()
         }
     }
-    
+
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
     }
-    
+
     private func updateCurrentTime() {
-        guard let player = playerNode,
-              let lastRenderTime = player.lastRenderTime,
-              let playerTime = player.playerTime(forNodeTime: lastRenderTime),
-              let file = audioFile else { return }
-        
-        let sampleRate = file.fileFormat.sampleRate
-        currentTime = Double(playerTime.sampleTime) / sampleRate
-        
-        // Update current lyric based on playback time
-        updateCurrentLyric()
+        // 1. If we are mid-seek, do NOT let the timer update the time, 
+        // otherwise the slider will "fight" the user's mouse position.
+        guard !isSeeking else { return }
+
+        guard let player = playerNode else { return }
+
+        let sampleRate = audioFile?.fileFormat.sampleRate ?? 44100
+        let newTime: TimeInterval
+
+        // 2. Try to get the high-precision time from the player node
+        if let lastRenderTime = player.lastRenderTime,
+           let playerTime = player.playerTime(forNodeTime: lastRenderTime) {
+
+            let elapsedSinceSeek = Double(playerTime.sampleTime) / sampleRate
+            newTime = self.seekOffset + elapsedSinceSeek
+        } else {
+            // FALLBACK: If the player is mid-transition, use the seekOffset 
+            // so the UI doesn't flicker back to 0:00.
+            newTime = self.seekOffset
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            // Only update if the change is significant to avoid unnecessary UI redraws
+            if abs(self.currentTime - newTime) > 0.01 {
+                self.currentTime = newTime
+                self.updateCurrentLyric()
+            }
+        }
     }
     
     private func updateCurrentLyric() {
@@ -405,17 +453,30 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     private func updateSpectrum() {
-        // Simulate spectrum data for visualization
-        // In a production app, you'd use AVAudioEngine tap to get real FFT data
-        spectrumData = (0..<20).map { _ in
-            isPlaying ? Float.random(in: 0...1) : 0
+        guard isPlaying else {
+            spectrumData = Array(repeating: 0, count: 20)
+            return
+        }
+
+        let newData = (0..<20).map { _ in Float.random(in: 0...1) }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // "Half-way" smoothing:
+            // 0.4 old data (history) + 0.6 new data (the 'jitter')
+            self.spectrumData = zip(self.spectrumData, newData).map { (old, new) in
+                return (old * 0.4) + (new * 0.6)
+            }
         }
     }
     
     private func handleTrackCompletion() {
+        // If we are currently seeking, ignore this signal!
+        if isSeeking { return }
+
         isPlaying = false
         stopTimer()
-        // Only auto-advance if we didn't manually switch tracks
         if shouldAutoAdvance {
             PlaylistManager.shared.next()
         }

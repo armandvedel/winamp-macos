@@ -469,50 +469,53 @@ class PlaylistManager: ObservableObject {
     func loadM3UPlaylist(from url: URL) -> [Track]? {
         // Ensure we have security-scoped access
         _ = ensureSecurityScopedAccess(for: url)
-        
+
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
             return nil
         }
-        
+
         var tracks: [Track] = []
         let lines = content.components(separatedBy: .newlines)
         let playlistDirectory = url.deletingLastPathComponent()
-        
+
         for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            
-            // Skip empty lines and comments (except #EXTM3U header)
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // --- UPDATED FOR EXTENDED M3U ---
+            // Skip empty lines and ANY line starting with # (Metadata/Header)
             guard !trimmed.isEmpty && !trimmed.hasPrefix("#") else { continue }
-            
+
             // Handle both absolute and relative paths
             let trackURL: URL
-            if trimmed.hasPrefix("/") || trimmed.hasPrefix("file://") {
-                // Absolute path
-                let path = trimmed.replacingOccurrences(of: "file://", with: "")
-                trackURL = URL(fileURLWithPath: path)
+            if trimmed.hasPrefix("file://") {
+                // Extended M3U often uses encoded URLs. URL(string:) handles the percent encoding.
+                if let encodedURL = URL(string: trimmed) {
+                    trackURL = encodedURL
+                } else {
+                    continue
+                }
+            } else if trimmed.hasPrefix("/") {
+                // Absolute POSIX path
+                trackURL = URL(fileURLWithPath: trimmed)
             } else {
                 // Relative path - resolve relative to M3U file location
                 trackURL = playlistDirectory.appendingPathComponent(trimmed)
             }
-            
-            // Resolve symlinks for local paths (not network volumes)
+
+            // Resolve symlinks for local paths
             let resolvedURL: URL
             if isNetworkVolume(trackURL) {
-                // Network volume - don't resolve symlinks
                 resolvedURL = trackURL
             } else {
-                // Local path - resolve symlinks
                 resolvedURL = trackURL.resolvingSymlinksInPath()
             }
-            
-            // Ensure security-scoped access before checking file
-            // This is especially important for network volumes
+
+            // Ensure security-scoped access
             _ = ensureSecurityScopedAccess(for: resolvedURL)
-            
-            // Also try to get access to parent directories for network volumes
+
+            // Network volume directory access helper
             if isNetworkVolume(resolvedURL) {
                 var currentPath = resolvedURL.deletingLastPathComponent()
-                // Try to get access up to 3 levels up for network volumes
                 for _ in 0..<3 {
                     if isNetworkVolume(currentPath) && currentPath.path != "/Volumes" {
                         _ = ensureSecurityScopedAccess(for: currentPath)
@@ -522,20 +525,20 @@ class PlaylistManager: ObservableObject {
                     }
                 }
             }
-            
+
             // Check if file exists and is a supported format
             let fileManager = FileManager.default
             if fileManager.fileExists(atPath: resolvedURL.path) {
                 let ext = resolvedURL.pathExtension.lowercased()
-                if ext == "mp3" || ext == "flac" || ext == "wav" {
-                    // Create track - this will try to get file size
+                // Added common formats often found in M3Us
+                if ["mp3", "flac", "wav", "m4a", "aiff"].contains(ext) {
                     let track = Track(url: resolvedURL)
                     tracks.append(track)
                 }
             }
         }
-        
-        return tracks
+
+        return tracks.isEmpty ? nil : tracks
     }
     
     func saveM3UPlaylist() {

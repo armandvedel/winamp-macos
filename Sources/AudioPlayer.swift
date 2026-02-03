@@ -134,49 +134,48 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     func loadTrack(_ track: Track) {
-        
         // Execute on audio queue to ensure serialization
         audioQueue.async { [weak self] in
             guard let self = self else { return }
-            
-            // CRITICAL: Stop and cleanup everything first
+
+            // 1. CRITICAL: Stop and cleanup everything first
             DispatchQueue.main.async {
-                self.seekOffset = 0 // Add this line
+                self.seekOffset = 0
                 self.stopTimer()
                 self.isPlaying = false
             }
-            
+
             // Small delay to ensure timer is stopped
             Thread.sleep(forTimeInterval: 0.02)
-            
-            // Completely destroy and recreate the player node to ensure clean state
+
+            // 2. Completely destroy and recreate the player node to ensure clean state
             if let player = self.playerNode, let engine = self.audioEngine, let _ = self.eqNode {
                 engine.disconnectNodeOutput(player)
                 engine.detach(player)
                 player.stop()
                 player.reset()
             }
-            
-            // Create a fresh player node
+
+            // 3. Create a fresh player node
             self.playerNode = AVAudioPlayerNode()
-            
-            // Reattach to engine
+
+            // 4. Reattach to engine
             if let player = self.playerNode, let engine = self.audioEngine, let eq = self.eqNode {
                 engine.attach(player)
                 engine.connect(player, to: eq, format: nil)
             }
-            
-            // Reset state on main thread
+
+            // 5. Reset state on main thread
             DispatchQueue.main.async {
                 self.currentTime = 0
-                self.shouldAutoAdvance = false
+                self.shouldAutoAdvance = true
                 self.audioFile = nil
                 self.currentTrack = track
                 self.currentLyrics = []
                 self.currentLyricText = nil
             }
-            
-            // Load lyrics asynchronously
+
+            // 6. Load lyrics asynchronously
             if let url = track.url {
                 LyricsParser.loadLyrics(for: url, artist: track.artist, title: track.title, duration: track.duration) { [weak self] lyrics in
                     DispatchQueue.main.async {
@@ -184,22 +183,25 @@ class AudioPlayer: NSObject, ObservableObject {
                     }
                 }
             }
-            
-            guard let url = track.url else { 
-                return 
-            }
-            
+
+            guard let url = track.url else { return }
+
+            // 7. Load Audio File and Start Playback
             do {
                 let newFile = try AVAudioFile(forReading: url)
                 let newDuration = Double(newFile.length) / newFile.fileFormat.sampleRate
                 let format = newFile.fileFormat
-                
-                // Extract audio info
+
                 let sampleRate = format.sampleRate
                 let channels = Int(format.channelCount)
-                // Estimate bitrate (actual bitrate varies, this is an approximation)
-                let bitrate = Int((sampleRate * Double(channels) * 16) / 1000) // Approximate for 16-bit audio
-                
+                let bitrate = Int((sampleRate * Double(channels) * 16) / 1000) 
+
+                // Schedule the file for the player node immediately
+                self.playerNode?.scheduleFile(newFile, at: nil) { [weak self] in
+                    // This closure runs when the file finishes playing
+                    // Logic for auto-advance is usually handled in the timer/observer
+                }
+
                 DispatchQueue.main.async {
                     self.audioFile = newFile
                     self.duration = newDuration
@@ -207,8 +209,12 @@ class AudioPlayer: NSObject, ObservableObject {
                     self.currentChannels = channels
                     self.currentBitrate = bitrate
                     self.updateNowPlayingInfo()
+
+                    // TRIGGER PLAYBACK
+                    self.play()
                 }
             } catch {
+                print("Error loading audio file: \(error)")
                 DispatchQueue.main.async {
                     self.audioFile = nil
                 }
@@ -263,7 +269,7 @@ class AudioPlayer: NSObject, ObservableObject {
             if !engine.isRunning {
                 do { try engine.start() } catch { return }
             }
-
+            self.shouldAutoAdvance = true
             player.stop()
             player.reset()
             self.shouldAutoAdvance = true
@@ -454,6 +460,7 @@ class AudioPlayer: NSObject, ObservableObject {
     
     private func updateSpectrum() {
         guard isPlaying else {
+            // Drop bars to zero immediately when stopped
             spectrumData = Array(repeating: 0, count: 20)
             return
         }
@@ -463,22 +470,39 @@ class AudioPlayer: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
-            // "Half-way" smoothing:
-            // 0.4 old data (history) + 0.6 new data (the 'jitter')
+            // 0.15 old data + 0.85 new data
+            // This is "faster by half" - it gives you that 
+            // jittery, chaotic Winamp energy without being a total blur.
             self.spectrumData = zip(self.spectrumData, newData).map { (old, new) in
-                return (old * 0.4) + (new * 0.6)
+                return (old * 0.15) + (new * 0.85)
             }
         }
     }
     
     private func handleTrackCompletion() {
-        // If we are currently seeking, ignore this signal!
-        if isSeeking { return }
+        // 1. If we are currently seeking, ignore this call! 
+        // Otherwise, seeking to the end of a song will "double trigger" the next track.
+        guard !isSeeking else { return }
 
-        isPlaying = false
-        stopTimer()
-        if shouldAutoAdvance {
-            PlaylistManager.shared.next()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            self.isPlaying = false
+            self.stopTimer()
+
+            // 2. Clear the current time so the next song starts at 0
+            self.currentTime = 0
+            self.seekOffset = 0
+
+            if self.shouldAutoAdvance {
+                print("Track finished naturally. Advancing to next...")
+                PlaylistManager.shared.next()
+
+                // 3. Small delay to let the engine breathe before playing the next song
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.play()
+                }
+            }
         }
     }
 }

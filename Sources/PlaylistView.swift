@@ -438,12 +438,15 @@ struct PlaylistView: View {
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
                 guard let data = item as? Data,
                       let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                
+
                 DispatchQueue.main.async {
                     let ext = url.pathExtension.lowercased()
                     if ext == "mp3" || ext == "flac" {
                         let track = Track(url: url)
                         playlistManager.addTrack(track)
+
+                        // ADD THIS LINE HERE:
+                        NSDocumentController.shared.noteNewRecentDocumentURL(url)
                     }
                 }
             }

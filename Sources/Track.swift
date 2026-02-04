@@ -25,7 +25,7 @@ private func isNetworkVolume(_ url: URL) -> Bool {
 struct Track: Identifiable, Equatable {
     let id = UUID()
     let url: URL?
-    let title: String
+    var title: String
     let artist: String
     let duration: TimeInterval
     let fileSize: Int64

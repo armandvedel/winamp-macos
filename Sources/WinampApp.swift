@@ -68,16 +68,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMainWindow()
     }
 
+     // The modern URL-based handler
     func application(_ app: NSApplication, open urls: [URL]) {
         setupMainWindow()
-        let newTracks = urls.map { Track(url: $0) }
-        PlaylistManager.shared.addTracks(newTracks)
-        urls.forEach { NSDocumentController.shared.noteNewRecentDocumentURL($0) }
-        NSApp.activate(ignoringOtherApps: true)
-    }
+        let manager = PlaylistManager.shared
 
+        for url in urls {
+            // 1. START ACCESSING THE FILE
+            let accessStarted = url.startAccessingSecurityScopedResource()
+            let ext = url.pathExtension.lowercased()
+
+            if ext == "m3u" || ext == "m3u8" {
+                // Case: M3U Playlist
+                if let parsedTracks = manager.loadM3UPlaylist(from: url) {
+                    manager.tracks = parsedTracks
+                    manager.currentIndex = 0
+
+                    DispatchQueue.main.async {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            manager.playTrack(at: 0)
+                        }
+                    }
+                } else {
+                    print("Failed to parse or access tracks in M3U")
+                }
+            } else {
+                // Case: Single Audio File
+                let newTrack = Track(url: url)
+                manager.addTracks([newTrack])
+            }
+
+            // 2. STOP ACCESSING (Inside the loop, after processing this specific URL)
+            if accessStarted {
+                url.stopAccessingSecurityScopedResource()
+            }
+
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        } // End of for loop
+    } // End of function
+
+
+    // The legacy String-based handler (Finder often uses this)
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        self.application(NSApplication.shared, open: [URL(fileURLWithPath: filename)])
+        let url = URL(fileURLWithPath: filename)
+        self.application(NSApplication.shared, open: [url])
         return true
     }
 

@@ -467,78 +467,45 @@ class PlaylistManager: ObservableObject {
     }
     
     func loadM3UPlaylist(from url: URL) -> [Track]? {
-        // Ensure we have security-scoped access
-        _ = ensureSecurityScopedAccess(for: url)
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let folderURL = url.deletingLastPathComponent()
+        var parsedTracks: [Track] = []
 
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return nil
-        }
-
-        var tracks: [Track] = []
         let lines = content.components(separatedBy: .newlines)
-        let playlistDirectory = url.deletingLastPathComponent()
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // --- UPDATED FOR EXTENDED M3U ---
-            // Skip empty lines and ANY line starting with # (Metadata/Header)
+            // Skip empty lines and metadata tags
             guard !trimmed.isEmpty && !trimmed.hasPrefix("#") else { continue }
 
-            // Handle both absolute and relative paths
-            let trackURL: URL
-            if trimmed.hasPrefix("file://") {
-                // Extended M3U often uses encoded URLs. URL(string:) handles the percent encoding.
-                if let encodedURL = URL(string: trimmed) {
-                    trackURL = encodedURL
+            var trackURL: URL?
+
+            if trimmed.lowercased().hasPrefix("file://") {
+                trackURL = URL(string: trimmed)
+            } else {
+                // Handle both absolute and relative paths
+                // First, decode percent-encoding (like %20 or %E2...)
+                let decodedPath = trimmed.removingPercentEncoding ?? trimmed
+
+                if decodedPath.hasPrefix("/") {
+                    // Absolute path
+                    trackURL = URL(fileURLWithPath: decodedPath)
                 } else {
-                    continue
-                }
-            } else if trimmed.hasPrefix("/") {
-                // Absolute POSIX path
-                trackURL = URL(fileURLWithPath: trimmed)
-            } else {
-                // Relative path - resolve relative to M3U file location
-                trackURL = playlistDirectory.appendingPathComponent(trimmed)
-            }
-
-            // Resolve symlinks for local paths
-            let resolvedURL: URL
-            if isNetworkVolume(trackURL) {
-                resolvedURL = trackURL
-            } else {
-                resolvedURL = trackURL.resolvingSymlinksInPath()
-            }
-
-            // Ensure security-scoped access
-            _ = ensureSecurityScopedAccess(for: resolvedURL)
-
-            // Network volume directory access helper
-            if isNetworkVolume(resolvedURL) {
-                var currentPath = resolvedURL.deletingLastPathComponent()
-                for _ in 0..<3 {
-                    if isNetworkVolume(currentPath) && currentPath.path != "/Volumes" {
-                        _ = ensureSecurityScopedAccess(for: currentPath)
-                        currentPath = currentPath.deletingLastPathComponent()
-                    } else {
-                        break
-                    }
+                    // Relative path
+                    trackURL = folderURL.appendingPathComponent(decodedPath).standardized
                 }
             }
 
-            // Check if file exists and is a supported format
-            let fileManager = FileManager.default
-            if fileManager.fileExists(atPath: resolvedURL.path) {
-                let ext = resolvedURL.pathExtension.lowercased()
-                // Added common formats often found in M3Us
-                if ["mp3", "flac", "wav", "m4a", "aiff"].contains(ext) {
-                    let track = Track(url: resolvedURL)
-                    tracks.append(track)
+            if let finalURL = trackURL {
+                if FileManager.default.fileExists(atPath: finalURL.path) {
+                    parsedTracks.append(Track(url: finalURL))
+                } else {
+                    print("File not found at: \(finalURL.path)")
                 }
             }
         }
-
-        return tracks.isEmpty ? nil : tracks
+        return parsedTracks.isEmpty ? nil : parsedTracks
     }
     
     func saveM3UPlaylist() {
@@ -635,6 +602,71 @@ class PlaylistManager: ObservableObject {
             
             // Add tracks on main queue
             self.addTracks(newTracks)
+        }
+    }
+    
+    func importM3U(from url: URL) {
+        print("--- Loading M3U: \(url.lastPathComponent) ---")
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let data = try Data(contentsOf: url)
+                let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1252) ?? ""
+
+                let lines = content.components(separatedBy: .newlines)
+                var parsedTracks: [Track] = []
+                let folderURL = url.deletingLastPathComponent()
+                var nextTrackTitle: String? = nil
+
+                for line in lines {
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty { continue }
+
+                    if trimmed.hasPrefix("#EXTINF:") {
+                        if let commaIndex = trimmed.firstIndex(of: ",") {
+                            nextTrackTitle = String(trimmed[trimmed.index(after: commaIndex)...])
+                        }
+                        continue
+                    }
+                    if trimmed.hasPrefix("#") { continue }
+
+                    let trackURL: URL
+                    // Check for file:/// format found in AFX93.m3u
+                    if trimmed.lowercased().hasPrefix("file://") {
+                        if let decodedURL = URL(string: trimmed) {
+                            trackURL = decodedURL
+                        } else { continue }
+                    } else if trimmed.hasPrefix("/") {
+                        trackURL = URL(fileURLWithPath: trimmed)
+                    } else {
+                        // Relative path (AFX Fan stuff.m3u)
+                        trackURL = folderURL.appendingPathComponent(trimmed).standardized
+                    }
+
+                    var track = Track(url: trackURL)
+                    if let customTitle = nextTrackTitle {
+                        track.title = customTitle
+                        nextTrackTitle = nil 
+                    }
+                    parsedTracks.append(track)
+                }
+
+                DispatchQueue.main.async {
+                    if !parsedTracks.isEmpty {
+                        self.tracks = parsedTracks
+                        self.currentIndex = 0
+                        // Trigger AudioPlayer playback
+                        AudioPlayer.shared.play()
+                        print("✅ Added \(parsedTracks.count) tracks.")
+                    } else {
+                        print("❌ No tracks parsed. Check file encoding or paths.")
+                    }
+                }
+            } catch {
+                print("🛑 Read Error: \(error.localizedDescription)")
+            }
         }
     }
 }

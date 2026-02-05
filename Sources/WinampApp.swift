@@ -30,6 +30,23 @@ struct WinampApp: App {
                     RecentItemsView()
                 }
             }
+            CommandMenu("Playback") {
+                Button("Previous") { playlistManager.previous() }
+                    .keyboardShortcut("z", modifiers: [])
+
+                Button("Play") { audioPlayer.play() }
+                    .keyboardShortcut("x", modifiers: [])
+
+                // This is your Spacebar toggle
+                Button("Pause/Unpause") { audioPlayer.togglePlayPause() }
+                    .keyboardShortcut(.space, modifiers: [])
+
+                Button("Stop") { audioPlayer.stop() }
+                    .keyboardShortcut("v", modifiers: [])
+
+                Button("Next") { playlistManager.next() }
+                    .keyboardShortcut("b", modifiers: [])
+            }
         }
     }
 }

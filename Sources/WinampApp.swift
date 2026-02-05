@@ -43,11 +43,10 @@ struct RecentItemsView: View {
         if recentURLs.isEmpty {
             Text("No Recent Items").disabled(true)
         } else {
-            // Display the 20 most recent items
             ForEach(recentURLs.prefix(20), id: \.self) { url in
                 Button(url.lastPathComponent) {
-                    let track = Track(url: url)
-                    playlistManager.addTracks([track])
+                    // Call the manager instead of creating a Track here
+                    playlistManager.openAnyURL(url)
                 }
             }
             

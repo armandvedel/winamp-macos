@@ -475,6 +475,24 @@ class PlaylistManager: ObservableObject {
         }
     }
     
+    func openAnyURL(_ url: URL) {
+        let extensionName = url.pathExtension.lowercased()
+
+        if extensionName == "m3u" || extensionName == "m3u8" {
+            // 1. Parse the playlist
+            if let tracks = loadM3UPlaylist(from: url) {
+                // 2. Loop through and add each track using your existing addTrack
+                for track in tracks {
+                    self.addTrack(track)
+                }
+            }
+        } else {
+            // It's just a single audio file
+            let track = Track(url: url)
+            self.addTrack(track)
+        }
+    }
+    
     func loadM3UPlaylist(from url: URL) -> [Track]? {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let folderURL = url.deletingLastPathComponent()

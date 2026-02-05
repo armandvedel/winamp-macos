@@ -68,43 +68,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
      // The modern URL-based handler
-    func application(_ app: NSApplication, open urls: [URL]) {
+   func application(_ app: NSApplication, open urls: [URL]) {
         setupMainWindow()
         let manager = PlaylistManager.shared
 
         for url in urls {
-            // 1. START ACCESSING THE FILE
             let accessStarted = url.startAccessingSecurityScopedResource()
             let ext = url.pathExtension.lowercased()
 
-            if ext == "m3u" || ext == "m3u8" {
-                // Case: M3U Playlist
-                if let parsedTracks = manager.loadM3UPlaylist(from: url) {
-                    manager.tracks = parsedTracks
-                    manager.currentIndex = 0
+            // Check if the playlist is currently empty before we add anything
+            let shouldStartPlayback = manager.tracks.isEmpty
 
-                    DispatchQueue.main.async {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            manager.playTrack(at: 0)
-                        }
+            if ext == "m3u" || ext == "m3u8" {
+                if let parsedTracks = manager.loadM3UPlaylist(from: url) {
+                    manager.addTracks(parsedTracks)
+
+                    if shouldStartPlayback {
+                        startPlayingFirstTrack(in: manager)
                     }
-                } else {
-                    print("Failed to parse or access tracks in M3U")
                 }
             } else {
-                // Case: Single Audio File
                 let newTrack = Track(url: url)
                 manager.addTracks([newTrack])
+
+                if shouldStartPlayback {
+                    startPlayingFirstTrack(in: manager)
+                }
             }
 
-            // 2. STOP ACCESSING (Inside the loop, after processing this specific URL)
             if accessStarted {
                 url.stopAccessingSecurityScopedResource()
             }
 
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
-        } // End of for loop
-    } // End of function
+        }
+    }
+
+    // Helper to keep the main function clean
+    private func startPlayingFirstTrack(in manager: PlaylistManager) {
+        DispatchQueue.main.async {
+            manager.currentIndex = 0
+            manager.playTrack(at: 0)
+        }
+    }
 
 
     // The legacy String-based handler (Finder often uses this)

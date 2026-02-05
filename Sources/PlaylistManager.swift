@@ -49,6 +49,15 @@ class PlaylistManager: ObservableObject {
     private var shuffledIndices: [Int] = []
     private var shuffleCurrentIndex: Int = 0
     
+    // 
+    var isAtEnd: Bool {
+        if shuffleEnabled {
+            return shuffleCurrentIndex >= shuffledIndices.count - 1
+        } else {
+            return currentIndex >= tracks.count - 1
+        }
+    }
+    
     // Security-scoped bookmark management
     private var activeSecurityScopes: Set<URL> = []
     private var securityScopedBookmarks: [Data] = []

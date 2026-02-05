@@ -73,8 +73,9 @@ class AudioPlayer: NSObject, ObservableObject {
     
     private func setupRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
-        
-        // Play command
+        let nowPlayingCenter = MPNowPlayingInfoCenter.default()
+
+        // 1. Play command
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
@@ -85,49 +86,55 @@ class AudioPlayer: NSObject, ObservableObject {
                     } else {
                         self.play()
                     }
+                    // Signal to macOS hierarchy that we are now the active player
+                    nowPlayingCenter.playbackState = .playing
                 }
             }
             return .success
         }
-        
-        // Pause command
+
+        // 2. Pause command
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             DispatchQueue.main.async {
                 if self.isPlaying {
                     self.pause()
+                    // Signal that we have yielded active playback
+                    nowPlayingCenter.playbackState = .paused
                 }
             }
             return .success
         }
-        
-        // Toggle play/pause command
+
+        // 3. Toggle play/pause command (The physical F8 key)
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             DispatchQueue.main.async {
                 self.togglePlayPause()
+                // Sync the system state with your app's internal state
+                nowPlayingCenter.playbackState = self.isPlaying ? .playing : .paused
             }
             return .success
         }
-        
-        // Next track command
+
+        // 4. Next track command
         commandCenter.nextTrackCommand.isEnabled = true
-        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
+        commandCenter.nextTrackCommand.addTarget { _ in
             DispatchQueue.main.async {
                 PlaylistManager.shared.next()
+                nowPlayingCenter.playbackState = .playing
             }
             return .success
         }
-        
-        // Previous track command
+
+        // 5. Previous track command
         commandCenter.previousTrackCommand.isEnabled = true
-        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
+        commandCenter.previousTrackCommand.addTarget { _ in
             DispatchQueue.main.async {
                 PlaylistManager.shared.previous()
+                nowPlayingCenter.playbackState = .playing
             }
             return .success
         }
@@ -223,19 +230,29 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     private func updateNowPlayingInfo() {
+        let center = MPNowPlayingInfoCenter.default()
+
         guard let track = currentTrack else {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            center.nowPlayingInfo = nil
+            center.playbackState = .stopped
             return
         }
-        
+
         var nowPlayingInfo = [String: Any]()
+
+        // Song Details
         nowPlayingInfo[MPMediaItemPropertyTitle] = track.title
         nowPlayingInfo[MPMediaItemPropertyArtist] = track.artist
+
+        // Timeline Details (Enables the progress bar in macOS Control Center)
         nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
         nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+
+        center.nowPlayingInfo = nowPlayingInfo
+
+        // Hierarchy signal: tells macOS Winamp is the active media app
+        center.playbackState = isPlaying ? .playing : .paused
     }
     
     func play() {
@@ -480,26 +497,33 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     private func handleTrackCompletion() {
-        // 1. If we are currently seeking, ignore this call! 
-        // Otherwise, seeking to the end of a song will "double trigger" the next track.
         guard !isSeeking else { return }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
+            // 1. Reset state before moving to next
             self.isPlaying = false
             self.stopTimer()
-
-            // 2. Clear the current time so the next song starts at 0
             self.currentTime = 0
             self.seekOffset = 0
 
             if self.shouldAutoAdvance {
-                print("Track finished naturally. Advancing to next...")
-                PlaylistManager.shared.next()
+                let manager = PlaylistManager.shared
 
-                // 3. Small delay to let the engine breathe before playing the next song
+                // If we are at the end and NOT repeating, we should stop here.
+                if manager.isAtEnd && !manager.repeatEnabled {
+                    print("End of playlist reached. Stopping.")
+                    self.stop() 
+                    return // EXIT HERE so we don't call next() or play()
+                }
+
+                print("Advancing to next track...")
+                manager.next()
+
+                // 3. Small delay to let the engine breathe
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Only play if the manager didn't already trigger a stop
                     self.play()
                 }
             }

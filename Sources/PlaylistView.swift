@@ -434,6 +434,8 @@ struct PlaylistView: View {
     }
     
     private func handleDrop(providers: [NSItemProvider]) {
+        let manager = PlaylistManager.shared
+
         for provider in providers {
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
                 guard let data = item as? Data,
@@ -441,13 +443,29 @@ struct PlaylistView: View {
 
                 DispatchQueue.main.async {
                     let ext = url.pathExtension.lowercased()
-                    if ext == "mp3" || ext == "flac" {
-                        let track = Track(url: url)
-                        playlistManager.addTrack(track)
 
-                        // ADD THIS LINE HERE:
-                        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                    // 1. Capture whether we should start playing BEFORE adding
+                    let shouldStartPlayback = manager.tracks.isEmpty
+
+                    if ext == "m3u" || ext == "m3u8" {
+                        // Case: Playlist file
+                        if let parsedTracks = manager.loadM3UPlaylist(from: url) {
+                            manager.addTracks(parsedTracks)
+                        }
+                    } else if ext == "mp3" || ext == "flac" || ext == "wav" {
+                        // Case: Single audio file
+                        let track = Track(url: url)
+                        manager.addTrack(track)
                     }
+
+                    // 2. Auto-play if this drop was into an empty list
+                    if shouldStartPlayback && !manager.tracks.isEmpty {
+                        manager.currentIndex = 0
+                        manager.playTrack(at: 0)
+                    }
+
+                    // Keep your recent items history updated
+                    NSDocumentController.shared.noteNewRecentDocumentURL(url)
                 }
             }
         }

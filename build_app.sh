@@ -18,7 +18,8 @@ if [ -f "icon.png" ]; then
 else
     echo "⚠️ icon.png not found in root, skipping icon step."
 fi
-
+# 3.5 Copy the Winamp Icon for the UI
+cp "Resources/Assets.xcassets/WinampIcon.imageset/winamp-icon.png" "$APP_NAME.app/Contents/Resources/"
 # 4. Copy Binary
 cp "$BUILD_PATH" "$APP_NAME.app/Contents/MacOS/"
 

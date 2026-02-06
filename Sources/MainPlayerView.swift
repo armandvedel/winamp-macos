@@ -400,16 +400,32 @@ struct MainPlayerView: View {
                     // Visualization toggle button with icon
                     Button(action: { showVisualization.toggle() }) {
                         ZStack {
-                            // Winamp icon
-                            Image("WinampIcon")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 18, height: 18)
-                                .opacity(showVisualization ? 0.8 : 1.0)
-                                .offset(x: showVisualization ? 1 : 0, y: showVisualization ? 1 : 0)
-                                .shadow(color: showVisualization ? Color.black.opacity(0.6) : Color.black.opacity(0.3), radius: showVisualization ? 2 : 0, x: showVisualization ? -1 : 0, y: showVisualization ? -1 : 0)
-                                .shadow(color: showVisualization ? Color.clear : Color.white.opacity(0.15), radius: showVisualization ? 0 : 1, x: showVisualization ? 0 : -1, y: showVisualization ? 0 : -1)
-                                .shadow(color: showVisualization ? Color.clear : Color.black.opacity(0.4), radius: showVisualization ? 0 : 1, x: showVisualization ? 0 : 1, y: showVisualization ? 0 : 1)
+                            let image: NSImage? = {
+                                // 1. Try simple name (Asset Catalog)
+                                if let img = NSImage(named: "winamp-icon") { return img }
+                                // 2. Try physical file in Resources
+                                if let path = Bundle.main.path(forResource: "winamp-icon", ofType: "png") {
+                                    return NSImage(contentsOfFile: path)
+                                }
+                                // 3. Try looking for it without the extension
+                                if let path = Bundle.main.path(forResource: "winamp-icon", ofType: nil) {
+                                    return NSImage(contentsOfFile: path)
+                                }
+                                return nil
+                            }()
+
+                            if let uiImage = image {
+                                Image(nsImage: uiImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 18, height: 18)
+                            } else {
+                                // Still showing the bolt? The file is definitely not being copied into the .app bundle
+                                Image(systemName: "bolt.circle.fill")
+                                    .resizable()
+                                    .frame(width: 18, height: 18)
+                                    .foregroundColor(.red) // Changed to red to show "Fatal Missing"
+                            }
                         }
                         .frame(width: 32, height: 28)
                     }

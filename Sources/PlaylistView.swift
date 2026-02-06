@@ -4,7 +4,8 @@ import UniformTypeIdentifiers
 struct PlaylistView: View {
     @EnvironmentObject var playlistManager: PlaylistManager
     @EnvironmentObject var audioPlayer: AudioPlayer
-    @State private var selectedTrack: Track.ID?
+    @State private var selectedTracks: Set<Track.ID> = [] 
+    @State private var lastClickedIndex: Int? = nil      // New tracker for Shift+Click range selection
     @State private var tapTimer: Timer?
     @State private var lastTappedTrack: Track.ID?
     @State private var lastTrackCount = 0
@@ -164,8 +165,7 @@ struct PlaylistView: View {
                                             let trackIndex = indexedTrack.index
                                             
                                             // Always select the track first
-                                            selectedTrack = trackId
-                                            
+                                            handleSelection(trackId: trackId, index: trackIndex)
                                             // Double-click detection
                                             if lastTappedTrack == trackId, let timer = tapTimer, timer.isValid {
                                                 // This is a double-click on the same track
@@ -186,7 +186,7 @@ struct PlaylistView: View {
                                                 track: indexedTrack.track,
                                                 index: indexedTrack.index + 1,
                                                 isPlaying: indexedTrack.index == playlistManager.currentIndex,
-                                                isSelected: indexedTrack.track.id == selectedTrack
+                                                isSelected: selectedTracks.contains(indexedTrack.track.id) // UPDATED
                                             )
                                         }
                                         .buttonStyle(.plain)
@@ -211,8 +211,7 @@ struct PlaylistView: View {
                                     let trackIndex = indexedTrack.index
                                     
                                     // Always select the track first
-                                    selectedTrack = trackId
-                                    
+                                    handleSelection(trackId: trackId, index: trackIndex)                                    
                                     // Double-click detection
                                     if lastTappedTrack == trackId, let timer = tapTimer, timer.isValid {
                                         // This is a double-click on the same track
@@ -233,7 +232,7 @@ struct PlaylistView: View {
                                         track: indexedTrack.track,
                                         index: indexedTrack.index + 1,
                                         isPlaying: indexedTrack.index == playlistManager.currentIndex,
-                                        isSelected: indexedTrack.track.id == selectedTrack
+                                        isSelected: selectedTracks.contains(indexedTrack.track.id) // UPDATED
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -330,11 +329,17 @@ struct PlaylistView: View {
                     }
                     
                     PlaylistButton(text: "REM") {
-                        if let selected = selectedTrack,
-                           let index = playlistManager.tracks.firstIndex(where: { $0.id == selected }) {
-                            playlistManager.removeTrack(at: index)
-                            selectedTrack = nil
-                        }
+                        // Identify indices from the current playlist that are selected
+                        let indicesToRemove = playlistManager.tracks.enumerated()
+                            .filter { selectedTracks.contains($0.element.id) }
+                            .map { $0.offset }
+                            .sorted(by: >) // Remove from back to front to preserve index order
+
+                        indicesToRemove.forEach { playlistManager.removeTrack(at: $0) }
+
+                        // Clear selection after removal
+                        selectedTracks.removeAll()
+                        lastClickedIndex = nil
                     }
                     
                     // Toggle between flat and grouped view
@@ -368,6 +373,31 @@ struct PlaylistView: View {
             // Resize handle at bottom edge (only when not minimized)
             if !isMinimized {
                 ResizeHandle(isDragging: $isDragging, playlistSize: $playlistSize)
+            }
+        }
+        
+        .focusable()
+        // This overlay handles the Return key without taking up ANY space in the layout
+        .overlay(
+            Button("") {
+                playHighlighted()
+            }
+            .keyboardShortcut(.return, modifiers: [])
+            .buttonStyle(.plain)
+            .allowsHitTesting(false) // Ensures it doesn't block mouse clicks
+            .opacity(0)
+        )
+        .onMoveCommand { direction in
+            switch direction {
+            case .up:    navigatePlaylist(direction: -1)
+            case .down:  navigatePlaylist(direction: 1)
+            default: break
+            }
+        }
+        .onAppear {
+            // This forces the playlist to be the primary responder
+            DispatchQueue.main.async {
+                NSApp.keyWindow?.makeFirstResponder(NSApp.keyWindow?.contentView)
             }
         }
         .background(WinampColors.mainBgDark)
@@ -432,6 +462,40 @@ struct PlaylistView: View {
             }
         }
     }
+    private func handleSelection(trackId: Track.ID, index: Int) {
+        let modifiers = NSEvent.modifierFlags
+
+        if modifiers.contains(.command) {
+            // CMD+Click: Toggle individual selection
+            if selectedTracks.contains(trackId) {
+                selectedTracks.remove(trackId)
+            } else {
+                selectedTracks.insert(trackId)
+            }
+        } else if modifiers.contains(.shift), let lastIndex = lastClickedIndex {
+            // SHIFT+Click: Select range between last click and current click
+            let range = lastIndex < index ? lastIndex...index : index...lastIndex
+            let idsInRange = playlistManager.tracks[range].map { $0.id }
+            selectedTracks.formUnion(idsInRange)
+        } else {
+            // Normal Click: Select only this track
+            selectedTracks = [trackId]
+        }
+
+        lastClickedIndex = index
+    }
+    
+    private func removeSelectedTracks() {
+        guard !selectedTracks.isEmpty else { return }
+
+        // Use your existing playlistManager to remove the tracks
+        // We filter the master list to keep only what's NOT in our selection
+        playlistManager.tracks.removeAll { selectedTracks.contains($0.id) }
+
+        // Clear the selection after deleting
+        selectedTracks.removeAll()
+        lastClickedIndex = nil
+    }
     
     private func handleDrop(providers: [NSItemProvider]) {
         let manager = PlaylistManager.shared
@@ -468,6 +532,36 @@ struct PlaylistView: View {
                     NSDocumentController.shared.noteNewRecentDocumentURL(url)
                 }
             }
+        }
+    }
+    // Add these inside PlaylistView
+    private func navigatePlaylist(direction: Int) {
+        let tracks = filteredTracks
+        guard !tracks.isEmpty else { return }
+
+        // Find where the "active" highlight is
+        let currentIdx: Int
+        if let last = lastClickedIndex, let found = tracks.firstIndex(where: { $0.index == last }) {
+            currentIdx = found
+        } else {
+            currentIdx = direction > 0 ? -1 : tracks.count
+        }
+
+        // Move and wrap
+        let newPos = (currentIdx + direction + tracks.count) % tracks.count
+        let target = tracks[newPos]
+
+        // Update the set and the last clicked tracker
+        selectedTracks = [target.track.id]
+        lastClickedIndex = target.index
+    }
+
+    private func playHighlighted() {
+        // Play the first song in the current selection
+        if let trackId = selectedTracks.first,
+           let index = playlistManager.tracks.firstIndex(where: { $0.id == trackId }) {
+            userInitiatedPlayback = true
+            playlistManager.playTrack(at: index)
         }
     }
 }

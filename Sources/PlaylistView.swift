@@ -375,17 +375,24 @@ struct PlaylistView: View {
                 ResizeHandle(isDragging: $isDragging, playlistSize: $playlistSize)
             }
         }
-        
+        //
         .focusable()
         // This overlay handles the Return key without taking up ANY space in the layout
         .overlay(
-            Button("") {
-                playHighlighted()
+            ZStack {
+                Button("") { playHighlighted() }
+                    .keyboardShortcut(.return, modifiers: [])
+                
+                Button("") { removeSelectedTracks() }
+                    .keyboardShortcut(.delete, modifiers: [])
+                
+                Button("") { removeSelectedTracks() }
+                    .keyboardShortcut(KeyEquivalent("\u{7f}"), modifiers: [])
             }
-            .keyboardShortcut(.return, modifiers: [])
             .buttonStyle(.plain)
-            .allowsHitTesting(false) // Ensures it doesn't block mouse clicks
+            .allowsHitTesting(false)
             .opacity(0)
+            .frame(width: 0, height: 0) // Strictly force zero size
         )
         .onMoveCommand { direction in
             switch direction {
@@ -403,6 +410,10 @@ struct PlaylistView: View {
         .background(WinampColors.mainBgDark)
         .frame(width: playlistSize.width, height: isMinimized ? 50 : playlistSize.height)
         .onAppear {
+            if playlistSize.height > 2000 {
+                playlistSize.height = 348
+                UserDefaults.standard.set(348, forKey: "playlistHeight")
+            }
             // Load saved grouped/flat view preference
             if !hasLoadedGroupedState {
                 showGrouped = UserDefaults.standard.bool(forKey: "playlistShowGrouped")

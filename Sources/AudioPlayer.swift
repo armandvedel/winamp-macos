@@ -2,7 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 import MediaPlayer
-
+import Accelerate
 
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
@@ -12,7 +12,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var volume: Float = 0.75
     @Published var currentTrack: Track?
-    @Published var spectrumData: [Float] = Array(repeating: 0, count: 20)
+    @Published var spectrumData: [Float] = Array(repeating: 0, count: 15)
     @Published var currentLyrics: [LyricLine] = []
     @Published var currentLyricText: String?
     @Published var currentBitrate: Int = 128
@@ -30,6 +30,8 @@ class AudioPlayer: NSObject, ObservableObject {
     
     private var isSeeking = false
     private var seekOffset: TimeInterval = 0 // Ensure this is here too
+    
+    var magnitudes: [Float] = [] 
     
     override init() {
         super.init()
@@ -64,10 +66,19 @@ class AudioPlayer: NSObject, ObservableObject {
         engine.connect(player, to: eq, format: nil)
         engine.connect(eq, to: engine.mainMixerNode, format: nil)
         
+        let mixer = engine.mainMixerNode
+        let format = mixer.outputFormat(forBus: 0)
+        
+        // Install a tap to "hear" the audio for the visualizer
+        mixer.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] (buffer, _) in
+            self?.processAudioBuffer(buffer)
+        }
+        // ---------------------
+
         do {
             try engine.start()
         } catch {
-            // Failed to start audio engine
+            print("Failed to start audio engine: \(error)")
         }
     }
     
@@ -474,15 +485,72 @@ class AudioPlayer: NSObject, ObservableObject {
             currentLyricText = newLyric
         }
     }
+    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameCount = Int(buffer.frameLength)
+
+        // We want 15 bars
+        let bins = 15
+        let samplesPerBin = frameCount / bins
+        var newFrequencies = [Float](repeating: 0, count: bins)
+
+        for i in 0..<bins {
+            var sum: Float = 0
+            for j in 0..<samplesPerBin {
+                sum += abs(channelData[i * samplesPerBin + j])
+            }
+            // Average and scale for visibility
+            newFrequencies[i] = (sum / Float(samplesPerBin)) * 10.0 
+        }
+
+        DispatchQueue.main.async {
+            // This is the "jitter" logic you already had at the bottom of your file
+            self.spectrumData = zip(self.spectrumData, newFrequencies).map { (old, new) in
+                return (old * 0.2) + (new * 0.8)
+            }
+        }
+    }
+    
+private func analyzeAudio(buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameCount = Int(buffer.frameLength)
+
+        let bins = 15
+        let samplesPerBin = frameCount / bins
+        var newData = [Float](repeating: 0, count: bins)
+
+        for i in 0..<bins {
+            var binPower: Float = 0
+            for j in 0..<samplesPerBin {
+                // We use the absolute value to get the 'amplitude'
+                let sample = channelData[i * samplesPerBin + j]
+                binPower += abs(sample)
+            }
+
+            // Normalize the power and multiply by a 'Gain' factor (5.0 to 10.0)
+            // If the bars are too low, increase 5.0 to 12.0
+            newData[i] = (binPower / Float(samplesPerBin)) * 5.0
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // This is the 'Smoothing' part. 
+            // 0.15 old + 0.85 new makes the bars very 'snappy' like Winamp.
+            self.spectrumData = zip(self.spectrumData, newData).map { (old, new) in
+                return (old * 0.15) + (new * 0.85)
+            }
+        }
+    } // <-- This was the brace missing in your snippet!
     
     private func updateSpectrum() {
         guard isPlaying else {
             // Drop bars to zero immediately when stopped
-            spectrumData = Array(repeating: 0, count: 20)
+            spectrumData = Array(repeating: 0, count: 15)
             return
         }
 
-        let newData = (0..<20).map { _ in Float.random(in: 0...1) }
+        let newData = (0..<15).map { _ in Float.random(in: 0...1) }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }

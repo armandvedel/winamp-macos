@@ -364,7 +364,7 @@ class AudioPlayer: NSObject, ObservableObject {
         guard let player = playerNode, !isPlaying else { return }
         player.play()
         isPlaying = true
-        //startTimer()
+        startTimer()
         updateNowPlayingInfo()
     }
     
@@ -492,7 +492,7 @@ class AudioPlayer: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             // Only update if the change is significant to avoid unnecessary UI redraws
-            if abs(self.currentTime - newTime) > 0.01 {
+            if abs(self.latestCurrentTime - newTime) > 0.1 {
                 self.currentTime = newTime
                 self.updateCurrentLyric()
             }
@@ -597,8 +597,8 @@ class AudioPlayer: NSObject, ObservableObject {
             // 0.15 old data + 0.85 new data
             // This is "faster by half" - it gives you that 
             // jittery, chaotic Winamp energy without being a total blur.
-            self.spectrumData = zip(self.spectrumData, latestSpectrumData).map { (old, new) in
-                return (old * 0.15) + (new * 0.85)
+                for i in 0..<self.spectrumData.count {
+                    self.spectrumData[i] = (self.spectrumData[i] * 0.15) + (latestSpectrumData[i] * 0.85)
             }
         }
     }

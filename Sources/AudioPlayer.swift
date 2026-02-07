@@ -9,10 +9,14 @@ class AudioPlayer: NSObject, ObservableObject {
     
     @Published var isPlaying = false
     @Published var currentTime: TimeInterval = 0
+    private var latestCurrentTime: TimeInterval = 0
+    
     @Published var duration: TimeInterval = 0
     @Published var volume: Float = 0.75
     @Published var currentTrack: Track?
     @Published var spectrumData: [Float] = Array(repeating: 0, count: 15)
+    private var latestSpectrumData: [Float] = Array(repeating: 0, count: 15)
+
     @Published var currentLyrics: [LyricLine] = []
     @Published var currentLyricText: String?
     @Published var currentBitrate: Int = 128
@@ -33,7 +37,7 @@ class AudioPlayer: NSObject, ObservableObject {
         vDSP_hann_window(&w, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
         return w
     }()
-    
+    //
     private var samplesBuffer = [Float](repeating: 0, count: 256)
     private var realBuffer = [Float](repeating: 0, count: 512)
     private var imagBuffer = [Float](repeating: 0, count: 512)
@@ -208,7 +212,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
             // 5. Reset state on main thread
             DispatchQueue.main.async {
-                self.currentTime = 0
+                self.latestCurrentTime = 0
                 self.shouldAutoAdvance = true
                 self.audioFile = nil
                 self.currentTrack = track
@@ -310,7 +314,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
                 DispatchQueue.main.async {
                     self.isPlaying = true
-                    //self.startTimer()
+                    self.startTimer()
                     self.updateNowPlayingInfo()
                 }
                 return // Exit early so we don't hit the stop/reset logic below
@@ -336,7 +340,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
             DispatchQueue.main.async {
                 self.isPlaying = true
-                //self.startTimer()
+                self.startTimer()
                 self.updateNowPlayingInfo()
             }
         }
@@ -423,14 +427,14 @@ class AudioPlayer: NSObject, ObservableObject {
             }
 
             DispatchQueue.main.async {
-                self.currentTime = time
+                self.latestCurrentTime = time
                 // Reset the flag after the UI has had a moment to catch up
                 self.isSeeking = false
 
                 if wasPlaying {
                     player.play()
                     self.isPlaying = true
-                    //self.startTimer()
+                    self.startTimer()
                 }
             }
         }
@@ -568,12 +572,12 @@ class AudioPlayer: NSObject, ObservableObject {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            for i in 0..<min(self.spectrumData.count, newData.count) {
-                let old = self.spectrumData[i]
+            for i in 0..<min(self.latestSpectrumData.count, newData.count) {
+                let old = self.latestSpectrumData[i]
                 let new = newData[i]
 
                 // Winamp Jitter logic: 15% old, 85% new
-                self.spectrumData[i] = (old * 0.15) + (new * 0.85)
+                self.latestSpectrumData[i] = (old * 0.15) + (new * 0.85)
             }
         }
     }
@@ -585,7 +589,7 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
-        let newData = (0..<15).map { _ in Float.random(in: 0...1) }
+        //let newData = (0..<15).map { _ in Float.random(in: 0...1) }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -593,7 +597,7 @@ class AudioPlayer: NSObject, ObservableObject {
             // 0.15 old data + 0.85 new data
             // This is "faster by half" - it gives you that 
             // jittery, chaotic Winamp energy without being a total blur.
-            self.spectrumData = zip(self.spectrumData, newData).map { (old, new) in
+            self.spectrumData = zip(self.spectrumData, latestSpectrumData).map { (old, new) in
                 return (old * 0.15) + (new * 0.85)
             }
         }

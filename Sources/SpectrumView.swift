@@ -50,70 +50,58 @@ struct ClassicVisualizerView: View {
     }
     
     private func barsVisualization(size: CGSize) -> some View {
-        Canvas { context, canvasSize in
-            let totalWidth = canvasSize.width
-            let barWidth = (totalWidth - CGFloat(columns - 1) * barSpacing) / CGFloat(columns)
-            
+        // 1. Move the gradient out of the loop to save massive CPU cycles
+        let barGradient = GraphicsContext.Shading.linearGradient(
+            Gradient(stops: [
+                .init(color: .green, location: 0.0),
+                .init(color: Color(red: 0.5, green: 1.0, blue: 0.0), location: 0.3),
+                .init(color: .yellow, location: 0.5),
+                .init(color: .orange, location: 0.7),
+                .init(color: .red, location: 0.85)
+            ]),
+            startPoint: CGPoint(x: 0, y: size.height),
+            endPoint: CGPoint(x: 0, y: 0)
+        )
+
+        return Canvas { context, canvasSize in
+            let barWidth = (canvasSize.width - CGFloat(columns - 1) * barSpacing) / CGFloat(columns)
+
+            // Use single paths for "Batch Drawing"
+            var barsPath = Path()
+            var peaksPath = Path()
+
             for col in 0..<columns {
-                let spectrumIndex = min(col, audioPlayer.spectrumData.count - 1)
-                
-                // Use smoothed height for smoother animation
-                let barHeight = col < smoothedHeights.count ? smoothedHeights[col] : 0
-                
                 let x = CGFloat(col) * (barWidth + barSpacing)
-                let y = canvasSize.height - barHeight
-                
-                // Draw main bar with gradient based on VERTICAL POSITION
-                // Each part of the bar gets colored based on where it is vertically
-                let barRect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
-                
-                // Create gradient colors based on vertical position thresholds
-                // Green (0-30%), Yellow-Green (30-50%), Yellow (50-70%), Orange (70-85%), Red (85-100%)
-                let gradient = Gradient(stops: [
-                    .init(color: Color(red: 0.0, green: 1.0, blue: 0.0), location: 0.0),    // Bottom: Green
-                    .init(color: Color(red: 0.5, green: 1.0, blue: 0.0), location: 0.30),   // 30%: Yellow-Green
-                    .init(color: Color(red: 1.0, green: 1.0, blue: 0.0), location: 0.50),   // 50%: Yellow
-                    .init(color: Color(red: 1.0, green: 0.65, blue: 0.0), location: 0.70),  // 70%: Orange
-                    .init(color: Color(red: 1.0, green: 0.0, blue: 0.0), location: 0.85),   // 85%: Red
-                    .init(color: Color(red: 1.0, green: 0.0, blue: 0.0), location: 1.0)     // Top: Red
-                ])
-                
-                // Apply gradient from bottom to top of the ENTIRE spectrum area
-                // This way each bar shows the gradient color for its vertical position
-                context.fill(
-                    Path(barRect),
-                    with: .linearGradient(
-                        gradient,
-                        startPoint: CGPoint(x: x, y: canvasSize.height),  // Bottom of spectrum
-                        endPoint: CGPoint(x: x, y: 0)                      // Top of spectrum
-                    )
-                )
-                
-                // Draw peak indicator (grey bar at the top)
-                if col < peakHeights.count && peakHeights[col] > 2 {
-                    let peakY = canvasSize.height - peakHeights[col]
-                    let peakRect = CGRect(x: x, y: peakY - 1, width: barWidth, height: 2)
-                    
-                    // Grey peak indicator
-                    context.fill(
-                        Path(peakRect),
-                        with: .color(Color(red: 0.6, green: 0.6, blue: 0.6))
-                    )
+
+                // Safety check for array bounds
+                let barHeight = col < smoothedHeights.count ? smoothedHeights[col] : 0
+                let peakHeight = col < peakHeights.count ? peakHeights[col] : 0
+
+                // Main Bar
+                let barRect = CGRect(x: x, y: canvasSize.height - barHeight, width: barWidth, height: barHeight)
+                barsPath.addRect(barRect)
+
+                // Peak Line (only if significant)
+                if peakHeight > 2 {
+                    let peakRect = CGRect(x: x, y: canvasSize.height - peakHeight - 1, width: barWidth, height: 2)
+                    peaksPath.addRect(peakRect)
                 }
             }
-            
-            // Draw blue dotted baseline at the bottom (boundary marker)
-            let dotSpacing: CGFloat = 3
-            let dotSize: CGFloat = 1
-            for i in stride(from: 0, to: canvasSize.width, by: dotSpacing) {
-                let dotRect = CGRect(x: i, y: canvasSize.height - 2, width: dotSize, height: dotSize)
-                context.fill(
-                    Path(ellipseIn: dotRect),
-                    with: .color(Color(red: 0.2, green: 0.4, blue: 0.8))
-                )
-            }
+
+            // DRAW CALL 1: All bars at once with gradient
+            context.fill(barsPath, with: barGradient)
+
+            // DRAW CALL 2: All peaks at once
+            context.fill(peaksPath, with: .color(.gray))
+
+            // DRAW CALL 3: Optimized Baseline
+            var baselinePath = Path()
+            baselinePath.move(to: CGPoint(x: 0, y: canvasSize.height - 2))
+            baselinePath.addLine(to: CGPoint(x: canvasSize.width, y: canvasSize.height - 2))
+            context.stroke(baselinePath, with: .color(Color(red: 0.2, green: 0.4, blue: 0.8)), style: StrokeStyle(lineWidth: 1, dash: [1, 3]))
         }
         .onChange(of: audioPlayer.spectrumData) { newData in
+            // Ensure this is using the "Gravity" logic we discussed to fix the slow fall
             updatePeaks(newData: newData, height: size.height)
         }
     }
@@ -275,32 +263,31 @@ struct ClassicVisualizerView: View {
 
     private func updatePeaks(newData: [Float], height: CGFloat) {
         let currentTime = Date().timeIntervalSince1970
-        let smoothingFactor: CGFloat = 0.3 // Lower = smoother/slower (0.3 = 30% new, 70% old)
-        let amplitudeScale: CGFloat = 0.95 // Balanced amplitude - mostly green/yellow with occasional orange/red
-        
-        for i in 0..<min(columns, newData.count) {
-            let targetHeight = CGFloat(newData[i]) * height * amplitudeScale
-            
-            // Smooth the bar height changes (slower rise and fall)
-            if i < smoothedHeights.count {
-                let currentSmoothed = smoothedHeights[i]
-                
-                // Rise quickly, fall slowly
-                if targetHeight > currentSmoothed {
-                    smoothedHeights[i] = currentSmoothed + (targetHeight - currentSmoothed) * 0.5 // Rise at 50% speed
-                } else {
-                    smoothedHeights[i] = currentSmoothed + (targetHeight - currentSmoothed) * smoothingFactor // Fall at 30% speed
-                }
+
+        // ADJUST THESE FOR "VIOLENT" MOVEMENT:
+        let gravity: CGFloat = 12.0      // Pixels the main bars drop per frame
+        let peakGravity: CGFloat = 4.0   // Pixels the peak lines drop per frame
+        let peakHold: Double = 0.2        // Seconds the peak stays before falling
+
+        let count = min(columns, newData.count)
+
+        for i in 0..<count {
+            let targetHeight = CGFloat(newData[i]) * height * 0.95
+
+            // --- BAR LOGIC (The Gradient Bars) ---
+            if targetHeight > smoothedHeights[i] {
+                smoothedHeights[i] = targetHeight // Jump up instantly
+            } else {
+                // Constant drop speed (Gravity) prevents the "slow-down" at the bottom
+                smoothedHeights[i] = max(targetHeight, smoothedHeights[i] - gravity)
             }
-            
-            // Update peak if current value is higher
+
+            // --- PEAK LOGIC (The Grey Lines) ---
             if targetHeight > peakHeights[i] {
                 peakHeights[i] = targetHeight
                 peakHoldTimer[i] = currentTime
-            }
-            // Decay peak slowly after hold time
-            else if currentTime - peakHoldTimer[i] > 0.8 {
-                peakHeights[i] = max(peakHeights[i] - 1.5, 0) // Slower decay
+            } else if currentTime - peakHoldTimer[i] > peakHold {
+                peakHeights[i] = max(0, peakHeights[i] - peakGravity)
             }
         }
     }

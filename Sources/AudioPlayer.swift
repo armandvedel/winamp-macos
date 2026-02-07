@@ -310,7 +310,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
                 DispatchQueue.main.async {
                     self.isPlaying = true
-                    self.startTimer()
+                    //self.startTimer()
                     self.updateNowPlayingInfo()
                 }
                 return // Exit early so we don't hit the stop/reset logic below
@@ -336,7 +336,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
             DispatchQueue.main.async {
                 self.isPlaying = true
-                self.startTimer()
+                //self.startTimer()
                 self.updateNowPlayingInfo()
             }
         }
@@ -360,7 +360,7 @@ class AudioPlayer: NSObject, ObservableObject {
         guard let player = playerNode, !isPlaying else { return }
         player.play()
         isPlaying = true
-        startTimer()
+        //startTimer()
         updateNowPlayingInfo()
     }
     
@@ -430,7 +430,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 if wasPlaying {
                     player.play()
                     self.isPlaying = true
-                    self.startTimer()
+                    //self.startTimer()
                 }
             }
         }

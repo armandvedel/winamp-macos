@@ -19,6 +19,29 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentSampleRate: Double = 44100
     @Published var currentChannels: Int = 2
     
+    private let fftSize = 1024
+
+    private lazy var log2n: vDSP_Length = {
+        vDSP_Length(log2(Float(fftSize)))
+    }()
+
+    private lazy var fftSetup: FFTSetup = {
+        vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
+    }()
+    private lazy var window: [Float] = {
+        var w = [Float](repeating: 0, count: fftSize)
+        vDSP_hann_window(&w, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+        return w
+    }()
+    
+    private var samplesBuffer = [Float](repeating: 0, count: 1024)
+    private var realBuffer = [Float](repeating: 0, count: 512)
+    private var imagBuffer = [Float](repeating: 0, count: 512)
+    private var magsBuffer = [Float](repeating: 0, count: 512)
+    
+    private var frameCounter = 0
+    private let framesPerUpdate = 2  // adjust to ~30–60Hz depending on buffer rate
+    
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
     private var audioFile: AVAudioFile?
@@ -71,7 +94,7 @@ class AudioPlayer: NSObject, ObservableObject {
         
         // Install a tap to "hear" the audio for the visualizer
         mixer.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] (buffer, _) in
-            self?.processAudioBuffer(buffer)
+            self?.processAudioBuffer(buffer) 
         }
         // ---------------------
 
@@ -485,63 +508,75 @@ class AudioPlayer: NSObject, ObservableObject {
             currentLyricText = newLyric
         }
     }
+    
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
-        let frameCount = Int(buffer.frameLength)
+        guard Int(buffer.frameLength) >= fftSize else { return }
 
-        // We want 15 bars
         let bins = 15
-        let samplesPerBin = frameCount / bins
-        var newFrequencies = [Float](repeating: 0, count: bins)
+        let sampleRate = Float(buffer.format.sampleRate)
+        let nyquist = sampleRate * 0.5
+        let halfSize = fftSize / 2
 
-        for i in 0..<bins {
-            var sum: Float = 0
-            for j in 0..<samplesPerBin {
-                sum += abs(channelData[i * samplesPerBin + j])
-            }
-            // Average and scale for visibility
-            newFrequencies[i] = (sum / Float(samplesPerBin)) * 10.0 
+        // Copy input samples into reusable buffer
+        for i in 0..<fftSize {
+            samplesBuffer[i] = channelData[i] * window[i]
         }
 
-        DispatchQueue.main.async {
-            // This is the "jitter" logic you already had at the bottom of your file
-            self.spectrumData = zip(self.spectrumData, newFrequencies).map { (old, new) in
-                return (old * 0.2) + (new * 0.8)
+        // Zero FFT output buffers
+        for i in 0..<halfSize {
+            realBuffer[i] = 0
+            imagBuffer[i] = 0
+        }
+
+        // Convert to split complex
+        samplesBuffer.withUnsafeBytes { inputPtr in
+            var split = DSPSplitComplex(realp: &realBuffer, imagp: &imagBuffer)
+            vDSP_ctoz(inputPtr.bindMemory(to: DSPComplex.self).baseAddress!, 2, &split, 1, vDSP_Length(halfSize))
+
+            // FFT
+            vDSP_fft_zrip(fftSetup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
+
+            // Magnitude squared
+            vDSP_zvmags(&split, 1, &magsBuffer, 1, vDSP_Length(halfSize))
+        }
+
+        // Map to 15 log-spaced bands
+        var newData = [Float](repeating: 0, count: bins)
+        for i in 0..<bins {
+            let lowCut: Float = 50
+            let f0 = lowCut * pow(nyquist / lowCut, Float(i) / Float(bins))
+            let f1 = lowCut * pow(nyquist / lowCut, Float(i+1) / Float(bins))
+
+            let startBin = max(0, min(halfSize - 1, Int(f0 / nyquist * Float(halfSize))))
+            let endBin = max(startBin + 1, min(halfSize, Int(f1 / nyquist * Float(halfSize))))
+            let count = endBin - startBin
+
+            var sum: Float = 0
+            magsBuffer.withUnsafeBufferPointer { ptr in
+                vDSP_sve(ptr.baseAddress! + startBin, 1, &sum, vDSP_Length(count))
+            }
+
+            let amplitude = sqrt(sum / Float(count))
+            newData[i] = log10(1 + amplitude) * 0.5  // scaled down for visuals
+        }
+
+        // Smooth and publish
+        frameCounter += 1
+        if frameCounter < framesPerUpdate { return }  // skip this frame
+        frameCounter = 0
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.spectrumData = zip(self.spectrumData, newData).map { old, new in
+                if new > old {
+                    return old * 0.05 + new * 0.95
+                } else {
+                    return old * 0.7 + new * 0.3
+                }
             }
         }
     }
-    
-private func analyzeAudio(buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData?[0] else { return }
-        let frameCount = Int(buffer.frameLength)
-
-        let bins = 15
-        let samplesPerBin = frameCount / bins
-        var newData = [Float](repeating: 0, count: bins)
-
-        for i in 0..<bins {
-            var binPower: Float = 0
-            for j in 0..<samplesPerBin {
-                // We use the absolute value to get the 'amplitude'
-                let sample = channelData[i * samplesPerBin + j]
-                binPower += abs(sample)
-            }
-
-            // Normalize the power and multiply by a 'Gain' factor (5.0 to 10.0)
-            // If the bars are too low, increase 5.0 to 12.0
-            newData[i] = (binPower / Float(samplesPerBin)) * 5.0
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-
-            // This is the 'Smoothing' part. 
-            // 0.15 old + 0.85 new makes the bars very 'snappy' like Winamp.
-            self.spectrumData = zip(self.spectrumData, newData).map { (old, new) in
-                return (old * 0.15) + (new * 0.85)
-            }
-        }
-    } // <-- This was the brace missing in your snippet!
     
     private func updateSpectrum() {
         guard isPlaying else {
@@ -596,6 +631,10 @@ private func analyzeAudio(buffer: AVAudioPCMBuffer) {
                 }
             }
         }
+    }
+    
+    deinit {
+    vDSP_destroy_fftsetup(fftSetup)
     }
 }
 

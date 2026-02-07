@@ -19,7 +19,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentSampleRate: Double = 44100
     @Published var currentChannels: Int = 2
     
-    private let fftSize = 1024
+    private let fftSize = 256
 
     private lazy var log2n: vDSP_Length = {
         vDSP_Length(log2(Float(fftSize)))
@@ -34,7 +34,7 @@ class AudioPlayer: NSObject, ObservableObject {
         return w
     }()
     
-    private var samplesBuffer = [Float](repeating: 0, count: 1024)
+    private var samplesBuffer = [Float](repeating: 0, count: 256)
     private var realBuffer = [Float](repeating: 0, count: 512)
     private var imagBuffer = [Float](repeating: 0, count: 512)
     private var magsBuffer = [Float](repeating: 0, count: 512)
@@ -93,7 +93,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let format = mixer.outputFormat(forBus: 0)
         
         // Install a tap to "hear" the audio for the visualizer
-        mixer.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] (buffer, _) in
+        mixer.installTap(onBus: 0, bufferSize: 256, format: format) { [weak self] (buffer, _) in
             self?.processAudioBuffer(buffer) 
         }
         // ---------------------
@@ -316,7 +316,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 return // Exit early so we don't hit the stop/reset logic below
             }
             // ---------------------------
-
+ 
             if !engine.isRunning {
                 do { try engine.start() } catch { return }
             }
@@ -416,7 +416,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 DispatchQueue.main.async { self.handleTrackCompletion() }
             }
 
-            player.prepare(withFrameCount: 1024)
+            player.prepare(withFrameCount: 256)
 
             if !engine.isRunning {
                 try? engine.start()
@@ -568,12 +568,12 @@ class AudioPlayer: NSObject, ObservableObject {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.spectrumData = zip(self.spectrumData, newData).map { old, new in
-                if new > old {
-                    return old * 0.05 + new * 0.95
-                } else {
-                    return old * 0.7 + new * 0.3
-                }
+            for i in 0..<min(self.spectrumData.count, newData.count) {
+                let old = self.spectrumData[i]
+                let new = newData[i]
+
+                // Winamp Jitter logic: 15% old, 85% new
+                self.spectrumData[i] = (old * 0.15) + (new * 0.85)
             }
         }
     }

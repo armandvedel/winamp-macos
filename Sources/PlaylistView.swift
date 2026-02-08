@@ -88,6 +88,7 @@ struct PlaylistView: View {
                     endPoint: .bottom
                 )
             )
+            .drawingGroup()
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
                 isMinimized.toggle()

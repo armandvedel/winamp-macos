@@ -100,6 +100,7 @@ struct ClassicVisualizerView: View {
             baselinePath.addLine(to: CGPoint(x: canvasSize.width, y: canvasSize.height - 2))
             context.stroke(baselinePath, with: .color(Color(red: 0.2, green: 0.4, blue: 0.8)), style: StrokeStyle(lineWidth: 1, dash: [1, 3]))
         }
+        .drawingGroup()
         .onChange(of: audioPlayer.spectrumData) { newData in
             // Ensure this is using the "Gravity" logic we discussed to fix the slow fall
             updatePeaks(newData: newData, height: size.height)

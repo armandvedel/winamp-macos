@@ -16,7 +16,6 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentTrack: Track?
     @Published var spectrumData: [Float] = Array(repeating: 0, count: 15)
     private var latestSpectrumData: [Float] = Array(repeating: 0, count: 15)
-
     @Published var currentLyrics: [LyricLine] = []
     @Published var currentLyricText: String?
     @Published var currentBitrate: Int = 128

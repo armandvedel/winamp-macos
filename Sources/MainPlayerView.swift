@@ -158,6 +158,7 @@ struct MainPlayerView: View {
                                 lineWidth: 2
                             )
                     )
+                    .drawingGroup()
                     .cornerRadius(4)
                     
                     // RIGHT: Song info, bitrate, sliders, and buttons
@@ -214,6 +215,7 @@ struct MainPlayerView: View {
                                             lineWidth: 1
                                         )
                                 )
+                                .drawingGroup()
                                 .cornerRadius(3)
                             
                             Text("kbps")
@@ -242,6 +244,7 @@ struct MainPlayerView: View {
                                             lineWidth: 1
                                         )
                                 )
+                                .drawingGroup()
                                 .cornerRadius(3)
                             
                             Text("kHz")
@@ -472,7 +475,9 @@ struct WinampProgressBar: View {
                                 ),
                                 lineWidth: 2
                             )
+                            
                     )
+                    .drawingGroup()
                 
                 // 2. Progress fill
                 let progress = seekDragging ? seekDragPercent : (currentTime / max(duration, 1))
@@ -488,6 +493,7 @@ struct WinampProgressBar: View {
                             endPoint: .bottom
                         )
                     )
+                    .drawingGroup()
                     .frame(width: max(16, geo.size.width * CGFloat(progress)))
                     .overlay(
                         RoundedRectangle(cornerRadius: 7)
@@ -504,15 +510,19 @@ struct WinampProgressBar: View {
                                 ),
                                 lineWidth: 1.5
                             )
+                            
                     )
+                    .drawingGroup()
                     .padding(2)
             }
             .frame(height: 20)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color.black.opacity(0.6), lineWidth: 1)
+                    
             )
             .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+            .drawingGroup()
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
@@ -629,6 +639,7 @@ struct ClassicTitleBar: View {
                     startPoint: .leading,
                     endPoint: .trailing
                 ))
+                .drawingGroup()
                 .frame(width: 50, height: 1)
             
             // Modern window controls (matching the image style)
@@ -651,11 +662,13 @@ struct ClassicTitleBar: View {
                 endPoint: .bottom
             )
         )
+        .drawingGroup()
         .overlay(
             // Transparent draggable overlay - hitTest excludes button area
             DraggableWindowViewRepresentable()
                 .allowsHitTesting(true)
         )
+        
     }
 }
 
@@ -737,6 +750,7 @@ struct ShadeView: View {
                     )
                     .cornerRadius(3)
                     .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+                    .drawingGroup()
                 
                 // Playback control buttons
                 HStack(spacing: 2) {
@@ -777,6 +791,7 @@ struct ShadeView: View {
                                 )
                         }
                     )
+                    .drawingGroup()
                     .cornerRadius(3)
                     .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
                     .onTapGesture {

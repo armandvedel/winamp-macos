@@ -50,19 +50,13 @@ struct MainPlayerView: View {
                             }
                             .buttonStyle(.plain)
                             
-                            Text(formatTime(showRemainingTime ? -(audioPlayer.duration - audioPlayer.currentTime) : audioPlayer.currentTime, showNegative: showRemainingTime))
-                                .font(.system(size: 22, weight: .bold, design: .monospaced))
-                                .foregroundColor(WinampColors.displayText)
-                                .shadow(color: WinampColors.displayText.opacity(0.6), radius: 3, x: 0, y: 0)
-                                .onTapGesture {
-                                    showRemainingTime.toggle()
-                                }
+                            TimerDisplayView(
+                                currentTime: audioPlayer.currentTime,
+                                duration: audioPlayer.duration,
+                                showRemainingTime: $showRemainingTime
+                            )
+                            
                         }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.black)
-                        
                         // Spectrum visualizer with letters on the left
                         HStack(spacing: 0) {
                             // Letters vertically on the left
@@ -294,86 +288,16 @@ struct MainPlayerView: View {
                 .padding(.bottom, 4)
                 
                 // Large progress bar with 3D inset effect
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        // Inset background with 3D shadow effect
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.black.opacity(0.6))
-                            .overlay(
-                                // Enhanced 3D inset effect - dark top/left, bright bottom/right
-                                RoundedRectangle(cornerRadius: 8)
-                                    .strokeBorder(
-                                        LinearGradient(
-                                            colors: [
-                                                Color.black.opacity(0.9),  // Dark shadow at top
-                                                Color.black.opacity(0.5),
-                                                Color.white.opacity(0.1),
-                                                Color.white.opacity(0.25)  // Bright highlight at bottom
-                                            ],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 2
-                                    )
-                            )
-                        
-                        // Progress fill with raised 3D effect (orange/yellow gradient)
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.98, green: 0.78, blue: 0.28),
-                                        Color(red: 0.88, green: 0.68, blue: 0.18)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .frame(width: max(16, geo.size.width * CGFloat(seekDragging ? seekDragPercent : (audioPlayer.currentTime / max(audioPlayer.duration, 1)))))
-                            .overlay(
-                                // Enhanced raised bevel - bright white on top, dark shadow on bottom
-                                RoundedRectangle(cornerRadius: 7)
-                                    .strokeBorder(
-                                        LinearGradient(
-                                            colors: [
-                                                Color.white.opacity(0.7),   // Bright highlight at top
-                                                Color.white.opacity(0.3),
-                                                Color.black.opacity(0.2),
-                                                Color.black.opacity(0.5)    // Dark shadow at bottom
-                                            ],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        ),
-                                        lineWidth: 1.5
-                                    )
-                            )
-                            .padding(2)
+                WinampProgressBar(
+                    currentTime: audioPlayer.currentTime,
+                    duration: audioPlayer.duration,
+                    seekDragging: $seekDragging,
+                    seekDragPercent: $seekDragPercent,
+                    onSeek: { percent in
+                        let newTime = audioPlayer.duration * percent
+                        audioPlayer.seek(to: max(0, min(newTime, audioPlayer.duration - 0.1)))
                     }
-                    .frame(height: 20)
-                    .overlay(
-                        // Outer border
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color.black.opacity(0.6), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { drag in
-                                seekDragging = true
-                                let percent = max(0, min(1, Double(drag.location.x / geo.size.width)))
-                                seekDragPercent = percent
-                            }
-                            .onEnded { drag in
-                                let percent = max(0, min(1, Double(drag.location.x / geo.size.width)))
-                                let newTime = audioPlayer.duration * percent
-                                audioPlayer.seek(to: max(0, min(newTime, audioPlayer.duration - 0.1)))
-                                seekDragging = false
-                            }
-                    )
-                }
-                .frame(height: 20)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                )
                 
                 // Control buttons row
                 HStack(spacing: 4) {
@@ -456,15 +380,9 @@ struct MainPlayerView: View {
         .onDisappear {
             stopAutoToggle()
         }
+        
     }
     
-    private func formatTime(_ time: TimeInterval, showNegative: Bool = false) -> String {
-        let absTime = abs(time)
-        let minutes = Int(absTime) / 60
-        let seconds = Int(absTime) % 60
-        let prefix = showNegative ? "-" : ""
-        return String(format: "%@%d:%02d", prefix, minutes, seconds)
-    }
     
     private func startAutoToggle() {
         // Toggle every 5 seconds
@@ -479,6 +397,131 @@ struct MainPlayerView: View {
     }
 }
 
+struct TimerDisplayView: View {
+    let currentTime: TimeInterval
+    let duration: TimeInterval
+    @Binding var showRemainingTime: Bool
+    
+    var body: some View {
+        Text(formatTime(showRemainingTime ? -(duration - currentTime) : currentTime, 
+                        showNegative: showRemainingTime))
+            .font(.system(size: 22, weight: .bold, design: .monospaced))
+            .foregroundColor(WinampColors.displayText)
+            .shadow(color: WinampColors.displayText.opacity(0.6), radius: 3, x: 0, y: 0)
+            .onTapGesture {
+                showRemainingTime.toggle()
+            }
+            //.frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.black)
+    }
+    
+    func formatTime(_ time: TimeInterval, showNegative: Bool = false) -> String {
+        let absTime = abs(time)
+        let minutes = Int(absTime) / 60
+        let seconds = Int(absTime) % 60
+        let prefix = showNegative ? "-" : ""
+        return String(format: "%@%d:%02d", prefix, minutes, seconds) 
+        
+    }
+}
+
+struct WinampProgressBar: View {
+    // Pass the specific values needed for the UI
+    let currentTime: TimeInterval
+    let duration: TimeInterval
+    
+    // Use @Binding for the dragging state if you need the parent to know, 
+    // or keep it local if only the bar needs it.
+    @Binding var seekDragging: Bool
+    @Binding var seekDragPercent: Double
+    
+    // Action closure to handle the seek logic in the parent (audioPlayer.seek)
+    var onSeek: (Double) -> Void
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                // 1. Inset background
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(0.6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.black.opacity(0.9),
+                                        Color.black.opacity(0.5),
+                                        Color.white.opacity(0.1),
+                                        Color.white.opacity(0.25)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    )
+                
+                // 2. Progress fill
+                let progress = seekDragging ? seekDragPercent : (currentTime / max(duration, 1))
+                
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.98, green: 0.78, blue: 0.28),
+                                Color(red: 0.88, green: 0.68, blue: 0.18)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: max(16, geo.size.width * CGFloat(progress)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.7),
+                                        Color.white.opacity(0.3),
+                                        Color.black.opacity(0.2),
+                                        Color.black.opacity(0.5)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1.5
+                            )
+                    )
+                    .padding(2)
+            }
+            .frame(height: 20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.black.opacity(0.6), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        seekDragging = true
+                        seekDragPercent = max(0, min(1, Double(drag.location.x / geo.size.width)))
+                    }
+                    .onEnded { drag in
+                        let percent = max(0, min(1, Double(drag.location.x / geo.size.width)))
+                        onSeek(percent)
+                        seekDragging = false
+                    }
+            )
+        }
+        .frame(height: 20)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+}
+
+                        
 // MARK: - Classic Title Bar (Modern Winamp Style)
 // NSView that enables window dragging
 final class DraggableWindowView: NSView {

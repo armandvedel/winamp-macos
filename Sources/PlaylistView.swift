@@ -285,24 +285,10 @@ struct PlaylistView: View {
             // Bottom control bar
             HStack(spacing: 0) {
                 // Left side - time display
-                HStack(spacing: 4) {
-                    Text(formatTime(audioPlayer.currentTime))
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(WinampColors.displayText)
-                        .frame(width: 50, alignment: .trailing)
-                    
-                    Text("/")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(WinampColors.displayInactive)
-                    
-                    Text(formatTime(totalDuration))
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(WinampColors.displayText)
-                        .frame(width: 50, alignment: .leading)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(WinampColors.displayBg)
+                MiniTimerView(
+                    currentTime: audioPlayer.currentTime,
+                    totalDuration: totalDuration
+                )
                 
                 Spacer()
                 
@@ -576,7 +562,39 @@ struct PlaylistView: View {
         }
     }
 }
-
+struct MiniTimerView: View {
+    let currentTime: TimeInterval
+    let totalDuration: TimeInterval
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(formatTime(currentTime))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(WinampColors.displayText)
+                .frame(width: 50, alignment: .trailing)
+            
+            Text("/")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(WinampColors.displayInactive)
+            
+            Text(formatTime(totalDuration))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(WinampColors.displayText)
+                .frame(width: 50, alignment: .leading)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(WinampColors.displayBg)
+    }
+    
+    // Reuse your efficient math-based formatter
+    private func formatTime(_ time: TimeInterval) -> String {
+        let absTime = Int(abs(time))
+        let minutes = absTime / 60
+        let seconds = absTime % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
 struct ClassicPlaylistRow: View {
     let track: Track
     let index: Int

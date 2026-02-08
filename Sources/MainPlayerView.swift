@@ -322,38 +322,7 @@ struct MainPlayerView: View {
                     }
                     
                     // Visualization toggle button with icon
-                    Button(action: { showVisualization.toggle() }) {
-                        ZStack {
-                            let image: NSImage? = {
-                                // 1. Try simple name (Asset Catalog)
-                                if let img = NSImage(named: "winamp-icon") { return img }
-                                // 2. Try physical file in Resources
-                                if let path = Bundle.main.path(forResource: "winamp-icon", ofType: "png") {
-                                    return NSImage(contentsOfFile: path)
-                                }
-                                // 3. Try looking for it without the extension
-                                if let path = Bundle.main.path(forResource: "winamp-icon", ofType: nil) {
-                                    return NSImage(contentsOfFile: path)
-                                }
-                                return nil
-                            }()
-
-                            if let uiImage = image {
-                                Image(nsImage: uiImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: 18, height: 18)
-                            } else {
-                                // Still showing the bolt? The file is definitely not being copied into the .app bundle
-                                Image(systemName: "bolt.circle.fill")
-                                    .resizable()
-                                    .frame(width: 18, height: 18)
-                                    .foregroundColor(.red) // Changed to red to show "Fatal Missing"
-                            }
-                        }
-                        .frame(width: 32, height: 28)
-                    }
-                    .buttonStyle(.plain)
+                    WinampLogoButton(showVisualization: $showVisualization)
                 }
             }
             .background(WinampColors.mainBg)
@@ -394,6 +363,48 @@ struct MainPlayerView: View {
     private func stopAutoToggle() {
         autoToggleTimer?.invalidate()
         autoToggleTimer = nil
+    }
+}
+
+struct WinampLogoButton: View {
+    @Binding var showVisualization: Bool
+    
+    // We load this once and keep it in memory. Static let is thread-safe and lazy.
+    private static let cachedIcon: NSImage? = {
+        // 1. Asset Catalog
+        if let img = NSImage(named: "winamp-icon") { return img }
+        
+        // 2. Physical file check
+        let types = ["png", nil]
+        for type in types {
+            if let path = Bundle.main.path(forResource: "winamp-icon", ofType: type) {
+                return NSImage(contentsOfFile: path)
+            }
+        }
+        return nil
+    }()
+
+    var body: some View {
+        Button(action: { showVisualization.toggle() }) {
+            ZStack {
+                if let uiImage = Self.cachedIcon {
+                    Image(nsImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 18, height: 18)
+                } else {
+                    // The "Fatal Missing" fallback
+                    Image(systemName: "bolt.circle.fill")
+                        .resizable()
+                        .frame(width: 18, height: 18)
+                        .foregroundColor(.red)
+                }
+            }
+            .frame(width: 32, height: 28)
+            // Use contentShape to make the whole area clickable even if the image is missing
+            .contentShape(Rectangle()) 
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -2975,41 +2975,39 @@ struct AnimatedSongDisplay: View {
         }
     }
     
-    private func scrollingDisplay(width: CGFloat) -> some View {
-        let fullText = "\(artist) • \(title)"
-        
-        return TimelineView(.animation(minimumInterval: 0.03)) { _ in
-            Canvas { context, size in
-                let text = Text(fullText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(WinampColors.displayText)
+private func scrollingDisplay(width: CGFloat) -> some View {
+    let fullText = "\(artist) • \(title)"
+    
+    // Trick: Wir rendern den Text EINMAL in eine View, die wir als Symbol nutzen
+    return Canvas { context, size in
+        // Wir holen uns das vor-gerenderte Symbol "songText"
+        if let resolvedText = context.resolveSymbol(id: "songText") {
+            let textWidth = resolvedText.size.width
+            
+            if textWidth > width - 12 {
+                let scrollDistance = textWidth + 100
                 
-                let resolved = context.resolve(text)
-                let textWidth = resolved.measure(in: size).width
+                // Deine bewährte Offset-Logik
+                context.draw(resolvedText, at: CGPoint(x: 6 + scrollOffset, y: size.height / 2), anchor: .leading)
+                context.draw(resolvedText, at: CGPoint(x: 6 + scrollOffset + scrollDistance, y: size.height / 2), anchor: .leading)
                 
-                // Check if text needs to scroll
-                if textWidth > width - 12 {
-                    // Scrolling text
-                    let scrollDistance = textWidth + 200 // Add gap between loops
-                    
-                    // Draw text twice for seamless loop
-                    context.draw(resolved, at: CGPoint(x: 6 + scrollOffset, y: size.height / 2), anchor: .leading)
-                    context.draw(resolved, at: CGPoint(x: 6 + scrollOffset + scrollDistance, y: size.height / 2), anchor: .leading)
-                    
-                    // Update scroll offset
-                    DispatchQueue.main.async {
-                        scrollOffset -= 0.3
-                        if scrollOffset <= -scrollDistance {
-                            scrollOffset = 0
-                        }
-                    }
-                } else {
-                    // Static text (fits) - center it
-                    context.draw(resolved, at: CGPoint(x: size.width / 2, y: size.height / 2), anchor: .center)
+                // Wir triggern das Update nur hier
+                DispatchQueue.main.async {
+                    scrollOffset -= 0.5
+                    if scrollOffset <= -scrollDistance { scrollOffset = 0 }
                 }
+            } else {
+                context.draw(resolvedText, at: CGPoint(x: size.width / 2, y: size.height / 2), anchor: .center)
             }
         }
+    } symbols: {
+        // Hier wird der Text nur gerendert, wenn er sich ändert!
+        Text(fullText)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(WinampColors.displayText)
+            .tag("songText")
     }
+}
     
     private func vestaboardDisplay(width: CGFloat) -> some View {
         TimelineView(.animation(minimumInterval: 0.05)) { _ in

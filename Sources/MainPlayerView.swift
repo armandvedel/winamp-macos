@@ -2919,6 +2919,7 @@ enum DisplayMode {
 }
 
 struct AnimatedSongDisplay: View {
+    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
     let artist: String
     let title: String
     let trackId: UUID?
@@ -2975,37 +2976,44 @@ struct AnimatedSongDisplay: View {
         }
     }
     
+// Keep your existing Timer
 private func scrollingDisplay(width: CGFloat) -> some View {
     let fullText = "\(artist) • \(title)"
-    
-    // Trick: Wir rendern den Text EINMAL in eine View, die wir als Symbol nutzen
+
     return Canvas { context, size in
-        // Wir holen uns das vor-gerenderte Symbol "songText"
+        // resolveSymbol allows the GPU to treat the text as a cached bitmap
         if let resolvedText = context.resolveSymbol(id: "songText") {
             let textWidth = resolvedText.size.width
-            
+
             if textWidth > width - 12 {
                 let scrollDistance = textWidth + 100
                 
-                // Deine bewährte Offset-Logik
+                // Drawing cached symbols is extremely fast on the GPU
                 context.draw(resolvedText, at: CGPoint(x: 6 + scrollOffset, y: size.height / 2), anchor: .leading)
                 context.draw(resolvedText, at: CGPoint(x: 6 + scrollOffset + scrollDistance, y: size.height / 2), anchor: .leading)
-                
-                // Wir triggern das Update nur hier
-                DispatchQueue.main.async {
-                    scrollOffset -= 0.5
-                    if scrollOffset <= -scrollDistance { scrollOffset = 0 }
-                }
             } else {
                 context.draw(resolvedText, at: CGPoint(x: size.width / 2, y: size.height / 2), anchor: .center)
             }
         }
     } symbols: {
-        // Hier wird der Text nur gerendert, wenn er sich ändert!
         Text(fullText)
             .font(.system(size: 11, weight: .medium))
             .foregroundColor(WinampColors.displayText)
             .tag("songText")
+    }
+    // This is the "GPU Switch":
+    .drawingGroup() 
+    // This updates logic 10 times a second instead of 60-120
+    .onReceive(timer) { _ in
+        let charCount = CGFloat(artist.count + title.count)
+        let scrollDistance = (charCount * 6.5) + 100 // Approximation
+        
+        // Move by whole pixels to keep it "choppy" and crisp
+        scrollOffset -= 3 
+
+        if scrollOffset <= -scrollDistance {
+            scrollOffset = 0
+        }
     }
 }
     

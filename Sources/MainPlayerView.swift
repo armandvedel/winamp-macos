@@ -454,6 +454,12 @@ struct WinampProgressBar: View {
 
     var body: some View {
         GeometryReader { geo in
+            let inset: CGFloat = 2
+            let usableWidth = geo.size.width - inset * 2
+            let progress = seekDragging
+                ? seekDragPercent
+                : (timeBuffer.currentTime / max(duration, 1))
+
             ZStack(alignment: .leading) {
                 // 1. Inset background
                 RoundedRectangle(cornerRadius: 8)
@@ -476,10 +482,7 @@ struct WinampProgressBar: View {
                             
                     )
                     .drawingGroup()
-                
-                // 2. Progress fill
-                let progress = seekDragging ? seekDragPercent : (timeBuffer.currentTime / max(duration, 1))
-                
+                // Progress Fill
                 RoundedRectangle(cornerRadius: 7)
                     .fill(
                         LinearGradient(
@@ -491,9 +494,9 @@ struct WinampProgressBar: View {
                             endPoint: .bottom
                         )
                     )
-                    .drawingGroup()
-                    .frame(width: max(16, geo.size.width * CGFloat(progress)))
+                    .frame(width: usableWidth * CGFloat(progress))
                     .overlay(
+                        // Inner gradient stroke for the soft edge
                         RoundedRectangle(cornerRadius: 7)
                             .strokeBorder(
                                 LinearGradient(
@@ -508,10 +511,8 @@ struct WinampProgressBar: View {
                                 ),
                                 lineWidth: 1.5
                             )
-                            
                     )
-                    .drawingGroup()
-                    .padding(2)
+                    .padding(inset) // keep the visual padding from the background
             }
             .frame(height: 20)
             .overlay(
@@ -525,10 +526,12 @@ struct WinampProgressBar: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
                         seekDragging = true
-                        seekDragPercent = max(0, min(1, Double(drag.location.x / geo.size.width)))
+                        let x = drag.location.x - inset
+                        seekDragPercent = max(0, min(1, Double(x / usableWidth)))
                     }
                     .onEnded { drag in
-                        let percent = max(0, min(1, Double(drag.location.x / geo.size.width)))
+                        let x = drag.location.x - inset
+                        let percent = max(0, min(1, Double(x / usableWidth)))
                         onSeek(percent)
                         seekDragging = false
                     }

@@ -1,28 +1,17 @@
 import SwiftUI
 
 // MARK: - Visualization Mode
-enum VisualizationMode {
-    case bars
-    case oscilloscope
+enum VisualizationMode: Int, CaseIterable {
+    case bars = 0
+    case oscilloscope = 1
 }
 
 // MARK: - Modern Animated Spectrum Visualizer
 struct ClassicVisualizerView: View {
-    @EnvironmentObject var audioPlayer: AudioPlayer
-    @State private var peakHeights: [CGFloat] = Array(repeating: 0, count: 15)
-    @State private var peakHoldTimer: [TimeInterval] = Array(repeating: 0, count: 15)
-    @State private var smoothedHeights: [CGFloat] = Array(repeating: 0, count: 15)
-    @AppStorage("visualizationMode") private var visualizationModeRaw: Int = 0
-    @State private var waveformBuffer: [(left: Float, right: Float)] = []
-    
-    // Waveform state for smooth oscillations
-    @State private var wavePhase: Double = 0.0
-    @State private var prevLeft: Float = 0
-    @State private var prevRight: Float = 0
-    
-    private var visualizationMode: VisualizationMode {
-        visualizationModeRaw == 0 ? .bars : .oscilloscope
-    }
+    @AppStorage("selectedVizMode") private var visualizationMode: VisualizationMode = .bars
+    @EnvironmentObject var audioPlayer: AudioPlayer    
+    enum VizMode { case bars, oscilloscope }
+
 
     let columns = 15
     let barWidth: CGFloat = 4.5
@@ -31,26 +20,37 @@ struct ClassicVisualizerView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            Group {
+            ZStack {
+                Color.black
+                
+                // Switcher: The inactive mode is completely removed from memory
                 if visualizationMode == .bars {
-                    barsVisualization(size: geometry.size)
+                    BarsVisualization(size: geometry.size)
                 } else {
-                    oscilloscopeVisualization(size: geometry.size)
+                    OscilloscopeVisualization(size: geometry.size)
                 }
             }
-            .background(Color.black)
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    let newMode: VisualizationMode = visualizationMode == .bars ? .oscilloscope : .bars
-                    visualizationModeRaw = newMode == .bars ? 0 : 1
-                }
+                visualizationMode = (visualizationMode == .bars ? .oscilloscope : .bars)
             }
         }
     }
+}
+
+struct BarsVisualization: View {
+    @EnvironmentObject var audioPlayer: AudioPlayer
+    let size: CGSize
     
-    private func barsVisualization(size: CGSize) -> some View {
-        // 1. Move the gradient out of the loop to save massive CPU cycles
+    // Move the state here so it lives and dies with this specific view
+    @State private var peakHeights: [CGFloat] = Array(repeating: 0, count: 15)
+    @State private var peakHoldTimer: [TimeInterval] = Array(repeating: 0, count: 15)
+    @State private var smoothedHeights: [CGFloat] = Array(repeating: 0, count: 15)
+    
+    let columns = 15
+    let barSpacing: CGFloat = 0.8
+
+    var body: some View {
         let barGradient = GraphicsContext.Shading.linearGradient(
             Gradient(stops: [
                 .init(color: .green, location: 0.0),
@@ -63,38 +63,30 @@ struct ClassicVisualizerView: View {
             endPoint: CGPoint(x: 0, y: 0)
         )
 
-        return Canvas { context, canvasSize in
+        Canvas { context, canvasSize in
             let barWidth = (canvasSize.width - CGFloat(columns - 1) * barSpacing) / CGFloat(columns)
 
-            // Use single paths for "Batch Drawing"
             var barsPath = Path()
             var peaksPath = Path()
 
             for col in 0..<columns {
                 let x = CGFloat(col) * (barWidth + barSpacing)
 
-                // Safety check for array bounds
                 let barHeight = col < smoothedHeights.count ? smoothedHeights[col] : 0
                 let peakHeight = col < peakHeights.count ? peakHeights[col] : 0
 
-                // Main Bar
                 let barRect = CGRect(x: x, y: canvasSize.height - barHeight, width: barWidth, height: barHeight)
                 barsPath.addRect(barRect)
 
-                // Peak Line (only if significant)
                 if peakHeight > 2 {
                     let peakRect = CGRect(x: x, y: canvasSize.height - peakHeight - 1, width: barWidth, height: 2)
                     peaksPath.addRect(peakRect)
                 }
             }
 
-            // DRAW CALL 1: All bars at once with gradient
             context.fill(barsPath, with: barGradient)
-
-            // DRAW CALL 2: All peaks at once
             context.fill(peaksPath, with: .color(.gray))
 
-            // DRAW CALL 3: Optimized Baseline
             var baselinePath = Path()
             baselinePath.move(to: CGPoint(x: 0, y: canvasSize.height - 2))
             baselinePath.addLine(to: CGPoint(x: canvasSize.width, y: canvasSize.height - 2))
@@ -102,108 +94,118 @@ struct ClassicVisualizerView: View {
         }
         .drawingGroup()
         .onChange(of: audioPlayer.spectrumData) { newData in
-            // Ensure this is using the "Gravity" logic we discussed to fix the slow fall
             updatePeaks(newData: newData, height: size.height)
         }
     }
+
+    private func updatePeaks(newData: [Float], height: CGFloat) {
+        let gravity: CGFloat = 0.15 
+        let currentTimestamp = Date().timeIntervalSince1970
+
+        for i in 0..<min(newData.count, columns) {
+            let targetHeight = CGFloat(newData[i]) * height
+            
+            // Update Smooth Bars
+            smoothedHeights[i] = (smoothedHeights[i] * 0.7) + (targetHeight * 0.3)
+            
+            // Update Peaks
+            if targetHeight >= peakHeights[i] {
+                peakHeights[i] = targetHeight
+                peakHoldTimer[i] = currentTimestamp + 0.5 
+            } else if currentTimestamp > peakHoldTimer[i] {
+                peakHeights[i] = max(0, peakHeights[i] - gravity)
+            }
+        }
+    }
+}
+
+struct OscilloscopeVisualization: View {
+    @EnvironmentObject var audioPlayer: AudioPlayer
+    let size: CGSize
     
-    private func oscilloscopeVisualization(size: CGSize) -> some View {
+    // WavePhase now lives only as long as the Oscilloscope is active
+    @State private var wavePhase: Double = 0.0
+    @State private var prevLeft: Float = 0.0
+    @State private var prevRight: Float = 0.0
+    @State private var waveformBuffer: [(left: Float, right: Float)] = []
+    let maxBufferSize = 100 // How many points to show in the history
+    
+    var body: some View {
+        // TimelineView starts when this struct appears and stops when it disappears
         TimelineView(.animation(minimumInterval: 0.033)) { timeline in
             Canvas { context, canvasSize in
                 let centerY = canvasSize.height / 2
                 let barWidth: CGFloat = 2.0
                 let barSpacing: CGFloat = 1.0
                 let totalBarWidth = barWidth + barSpacing
-                
-                // Calculate how many bars fit in the width
                 let numBars = Int(canvasSize.width / totalBarWidth)
-                
-                // Get individual spectrum values for maximum dynamics
                 let spectrumCount = audioPlayer.spectrumData.count
                 
-                // Draw static bars that dance up/down based on their position
+                // BATCH PATHS: We collect all lines here first
+                var leftChannelPath = Path()
+                var rightChannelPath = Path()
+                
                 for i in 0..<numBars {
                     let x = CGFloat(i) * totalBarWidth
-                    
-                    // Calculate wave pattern based on position across screen
-                    let spatialPhase = Double(i) * 0.25 // More spacing for dramatic waves
-                    
-                    // Map each bar to a spectrum index for direct response
+                    let spatialPhase = Double(i) * 0.25
                     let spectrumIndex = (i * spectrumCount) / numBars
                     let localFreq = CGFloat(audioPlayer.spectrumData[min(spectrumIndex, spectrumCount - 1)])
                     
-                    // Slower, smoother time-based oscillators
+                    // Complex Wave Math
                     let veryFast = sin(wavePhase * 2.5 + Double(i) * 0.1) * 0.35
                     let fast = cos(wavePhase * 1.8 + Double(i) * 0.05) * 0.3
                     let medium = sin(wavePhase * 1.2 + Double(i) * 0.08) * 0.25
                     let slow = cos(wavePhase * 0.6) * 0.2
                     let chaotic = sin(wavePhase * 1.5 + Double(i) * 0.15) * 0.15
                     let timeModulation = veryFast + fast + medium + slow + chaotic
-                    
-                    // Add per-bar randomness for organic chaos
                     let randomVariation = Double.random(in: 0.85...1.15)
                     
-                    // Left channel (red) - very complex wave with many harmonics
-                    let leftWaveShape = sin(spatialPhase) * 0.4 + 
-                                       sin(spatialPhase * 3.1) * 0.3 + 
-                                       sin(spatialPhase * 0.6) * 0.2 +
-                                       cos(spatialPhase * 1.7) * 0.15
+                    // Left Channel Calculation
+                    let leftWaveShape = sin(spatialPhase) * 0.4 + sin(spatialPhase * 3.1) * 0.3 + sin(spatialPhase * 0.6) * 0.2 + cos(spatialPhase * 1.7) * 0.15
                     let leftDynamic = abs(leftWaveShape * (0.3 + Double(localFreq) * 2.5) * (0.5 + timeModulation) * randomVariation)
-                    
-                    // Right channel (blue) - completely different harmonics
-                    let rightWaveShape = sin(spatialPhase * 1.3 + 0.7) * 0.4 + 
-                                        cos(spatialPhase * 2.4 + 1.2) * 0.3 +
-                                        sin(spatialPhase * 0.8 + 0.4) * 0.2 +
-                                        cos(spatialPhase * 1.9 + 1.5) * 0.15
-                    let rightDynamic = abs(rightWaveShape * (0.3 + Double(localFreq) * 2.5) * (0.5 + sin(wavePhase * 1.4 + Double(i) * 0.12) + cos(wavePhase * 1.9) * 0.4) * randomVariation)
-                    
-                    // Much more aggressive amplitude scaling
                     let leftAmp = min(CGFloat(leftDynamic) * canvasSize.height * 0.5, canvasSize.height / 2 - 1)
+                    
+                    // Add Left Bar to Path
+                    leftChannelPath.move(to: CGPoint(x: x, y: centerY))
+                    leftChannelPath.addLine(to: CGPoint(x: x, y: centerY + leftAmp))
+                    
+                    // Right Channel Calculation
+                    let rightWaveShape = sin(spatialPhase * 1.3 + 0.7) * 0.4 + cos(spatialPhase * 2.4 + 1.2) * 0.3 + sin(spatialPhase * 0.8 + 0.4) * 0.2 + cos(spatialPhase * 1.9 + 1.5) * 0.15
+                    let rightDynamic = abs(rightWaveShape * (0.3 + Double(localFreq) * 2.5) * (0.5 + sin(wavePhase * 1.4 + Double(i) * 0.12) + cos(wavePhase * 1.9) * 0.4) * randomVariation)
                     let rightAmp = min(CGFloat(rightDynamic) * canvasSize.height * 0.5, canvasSize.height / 2 - 1)
                     
-                    // Draw vertical bar
-                    // Bottom half represents left channel (red)
-                    let leftTop = centerY
-                    let leftBottom = centerY + leftAmp
-                    
-                    var leftPath = Path()
-                    leftPath.move(to: CGPoint(x: x, y: leftTop))
-                    leftPath.addLine(to: CGPoint(x: x, y: leftBottom))
-                    context.stroke(leftPath, with: .color(Color(red: 1.0, green: 0.0, blue: 0.0)), lineWidth: barWidth)
-                    
-                    // Top half represents right channel (blue)
-                    let rightTop = centerY - rightAmp
-                    let rightBottom = centerY
-                    
-                    var rightPath = Path()
-                    rightPath.move(to: CGPoint(x: x, y: rightTop))
-                    rightPath.addLine(to: CGPoint(x: x, y: rightBottom))
-                    context.stroke(rightPath, with: .color(Color(red: 0.0, green: 0.5, blue: 1.0)), lineWidth: barWidth)
+                    // Add Right Bar to Path
+                    rightChannelPath.move(to: CGPoint(x: x, y: centerY - rightAmp))
+                    rightChannelPath.addLine(to: CGPoint(x: x, y: centerY))
                 }
                 
-                // Draw center line
-                var centerLine = Path()
-                centerLine.move(to: CGPoint(x: 0, y: centerY))
-                centerLine.addLine(to: CGPoint(x: canvasSize.width, y: centerY))
-                context.stroke(centerLine, with: .color(Color(red: 0.2, green: 0.4, blue: 0.8).opacity(0.5)), lineWidth: 1)
+                // DRAW CALL 1: All Red bars at once
+                context.stroke(leftChannelPath, with: .color(.red), lineWidth: barWidth)
                 
-                // Draw blue dotted baseline at the bottom (boundary marker)
-                let dotSpacing: CGFloat = 3
-                let dotSize: CGFloat = 1
-                for i in stride(from: 0, to: canvasSize.width, by: dotSpacing) {
-                    let dotRect = CGRect(x: i, y: canvasSize.height - 2, width: dotSize, height: dotSize)
-                    context.fill(
-                        Path(ellipseIn: dotRect),
-                        with: .color(Color(red: 0.2, green: 0.4, blue: 0.8))
-                    )
+                // DRAW CALL 2: All Blue bars at once
+                context.stroke(rightChannelPath, with: .color(Color(red: 0.0, green: 0.5, blue: 1.0)), lineWidth: barWidth)
+                
+                // Static Elements (Center line and Dotted Baseline)
+                var staticElements = Path()
+                staticElements.move(to: CGPoint(x: 0, y: centerY))
+                staticElements.addLine(to: CGPoint(x: canvasSize.width, y: centerY))
+                context.stroke(staticElements, with: .color(Color.blue.opacity(0.3)), lineWidth: 1)
+                
+                // Dotted line at bottom
+                let dotPath = Path { p in
+                    for i in stride(from: 0, to: canvasSize.width, by: 3) {
+                        p.addEllipse(in: CGRect(x: i, y: canvasSize.height - 2, width: 1, height: 1))
+                    }
                 }
-            }
-            .onChange(of: audioPlayer.spectrumData) { newData in
-                updateWaveformBuffer(spectrumData: newData)
+                context.fill(dotPath, with: .color(Color(red: 0.2, green: 0.4, blue: 0.8)))
             }
         }
+        .onAppear {
+            // Start the phase animation
+            startAnimation()
+        }
     }
-    
+       
     private func updateWaveformBuffer(spectrumData: [Float]) {
         // Calculate amplitude from spectrum data
         let amplitude = spectrumData.reduce(0, +) / Float(spectrumData.count)
@@ -261,39 +263,16 @@ struct ClassicVisualizerView: View {
             waveformBuffer.removeFirst()
         }
     }    
-
-    private func updatePeaks(newData: [Float], height: CGFloat) {
-        let currentTime = Date().timeIntervalSince1970
-
-        // ADJUST THESE FOR "VIOLENT" MOVEMENT:
-        let gravity: CGFloat = 12.0      // Pixels the main bars drop per frame
-        let peakGravity: CGFloat = 4.0   // Pixels the peak lines drop per frame
-        let peakHold: Double = 0.2        // Seconds the peak stays before falling
-
-        let count = min(columns, newData.count)
-
-        for i in 0..<count {
-            let targetHeight = CGFloat(newData[i]) * height * 0.95
-
-            // --- BAR LOGIC (The Gradient Bars) ---
-            if targetHeight > smoothedHeights[i] {
-                smoothedHeights[i] = targetHeight // Jump up instantly
-            } else {
-                // Constant drop speed (Gravity) prevents the "slow-down" at the bottom
-                smoothedHeights[i] = max(targetHeight, smoothedHeights[i] - gravity)
-            }
-
-            // --- PEAK LOGIC (The Grey Lines) ---
-            if targetHeight > peakHeights[i] {
-                peakHeights[i] = targetHeight
-                peakHoldTimer[i] = currentTime
-            } else if currentTime - peakHoldTimer[i] > peakHold {
-                peakHeights[i] = max(0, peakHeights[i] - peakGravity)
-            }
+    
+    private func startAnimation() {
+        // We use a simple Timer or the TimelineView phase to keep it moving
+        // To keep it simple, we can update wavePhase via the TimelineView context if preferred,
+        // but updating it here via a DisplayLink or Timer works well for State.
+        Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { _ in
+            wavePhase += 0.1
         }
     }
 }
-
 // Keep old one for compatibility but unused
 struct SpectrumView: View {
     @EnvironmentObject var audioPlayer: AudioPlayer

@@ -97,7 +97,14 @@ class AudioPlayer: NSObject, ObservableObject {
         
         // Install a tap to "hear" the audio for the visualizer
         mixer.installTap(onBus: 0, bufferSize: 256, format: format) { [weak self] (buffer, _) in
-            self?.processAudioBuffer(buffer) 
+            guard let self = self, self.isPlaying else { 
+                // Optional: Clear the visualizer when stopped
+                if self?.spectrumData.contains(where: { $0 > 0 }) == true {
+                DispatchQueue.main.async { self?.spectrumData = Array(repeating: 0, count: 15) }
+            }
+            return 
+            }
+        self.processAudioBuffer(buffer) 
         }
         // ---------------------
 

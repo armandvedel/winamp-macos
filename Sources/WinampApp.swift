@@ -3,14 +3,14 @@ import AppKit
 
 @main
 struct WinampApp: App {
-    @StateObject private var audioPlayer = AudioPlayer.shared
+    //@StateObject private var audioPlayer = AudioPlayer.shared
     @StateObject private var playlistManager = PlaylistManager.shared
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
         Settings {
             EmptyView()
-                .environmentObject(audioPlayer)
+                .environmentObject(AudioPlayer.shared)
                 .environmentObject(playlistManager)
         }
         .commands {
@@ -34,14 +34,14 @@ struct WinampApp: App {
                 Button("Previous") { playlistManager.previous() }
                     .keyboardShortcut("z", modifiers: [])
 
-                Button("Play") { audioPlayer.play() }
+                Button("Play") { AudioPlayer.shared.play() }
                     .keyboardShortcut("x", modifiers: [])
 
                 // This is your Spacebar toggle
-                Button("Pause/Unpause") { audioPlayer.togglePlayPause() }
+                Button("Pause/Unpause") { AudioPlayer.shared.togglePlayPause() }
                     .keyboardShortcut(.space, modifiers: [])
 
-                Button("Stop") { audioPlayer.stop() }
+                Button("Stop") { AudioPlayer.shared.stop() }
                     .keyboardShortcut("v", modifiers: [])
 
                 Button("Next") { playlistManager.next() }
@@ -52,26 +52,30 @@ struct WinampApp: App {
 }
 
 struct RecentItemsView: View {
-    @ObservedObject var playlistManager = PlaylistManager.shared
-    
+    // We don't actually need to observe the manager here if we 
+    // just want to show what's in the system's "Recent" list.
+    @State private var recentURLs: [URL] = []
+
     var body: some View {
-        let recentURLs = NSDocumentController.shared.recentDocumentURLs
-        
-        if recentURLs.isEmpty {
-            Text("No Recent Items").disabled(true)
-        } else {
-            ForEach(recentURLs.prefix(20), id: \.self) { url in
-                Button(url.lastPathComponent) {
-                    // Call the manager instead of creating a Track here
-                    playlistManager.openAnyURL(url)
+        Group {
+            if recentURLs.isEmpty {
+                Text("No Recent Items").disabled(true)
+            } else {
+                ForEach(recentURLs.prefix(20), id: \.self) { url in
+                    Button(url.lastPathComponent) {
+                        PlaylistManager.shared.openAnyURL(url)
+                    }
+                }
+                Divider()
+                Button("Clear Recent") {
+                    NSDocumentController.shared.clearRecentDocuments(nil)
+                    recentURLs = [] // Clear local cache too
                 }
             }
-            
-            Divider()
-            
-            Button("Clear Recent") {
-                NSDocumentController.shared.clearRecentDocuments(nil)
-            }
+        }
+        .onAppear {
+            // Only fetch once when the menu is actually opened/rendered
+            self.recentURLs = NSDocumentController.shared.recentDocumentURLs
         }
     }
 }

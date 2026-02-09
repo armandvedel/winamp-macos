@@ -11,12 +11,6 @@ struct ClassicVisualizerView: View {
     @AppStorage("selectedVizMode") private var visualizationMode: VisualizationMode = .bars
     @EnvironmentObject var audioPlayer: AudioPlayer    
     enum VizMode { case bars, oscilloscope }
-
-
-    let columns = 15
-    let barWidth: CGFloat = 4.5
-    let barSpacing: CGFloat = 0.8
-    let maxBufferSize = 300 // Number of bars to show
     
     var body: some View {
         GeometryReader { geometry in
@@ -39,7 +33,8 @@ struct ClassicVisualizerView: View {
 }
 
 struct BarsVisualization: View {
-    @EnvironmentObject var audioPlayer: AudioPlayer
+    //@EnvironmentObject var audioPlayer: AudioPlayer
+    @ObservedObject private var spectrum = SpectrumBuffer.shared
     let size: CGSize
     
     // Move the state here so it lives and dies with this specific view
@@ -93,7 +88,7 @@ struct BarsVisualization: View {
             context.stroke(baselinePath, with: .color(Color(red: 0.2, green: 0.4, blue: 0.8)), style: StrokeStyle(lineWidth: 1, dash: [1, 3]))
         }
         .drawingGroup()
-        .onChange(of: audioPlayer.spectrumData) { newData in
+        .onChange(of: SpectrumBuffer.shared.spectrumData) { newData in
             updatePeaks(newData: newData, height: size.height)
         }
     }
@@ -139,7 +134,7 @@ struct OscilloscopeVisualization: View {
                 let barSpacing: CGFloat = 1.0
                 let totalBarWidth = barWidth + barSpacing
                 let numBars = Int(canvasSize.width / totalBarWidth)
-                let spectrumCount = audioPlayer.spectrumData.count
+                let spectrumCount = SpectrumBuffer.shared.spectrumData.count
                 
                 // BATCH PATHS: We collect all lines here first
                 var leftChannelPath = Path()
@@ -149,7 +144,7 @@ struct OscilloscopeVisualization: View {
                     let x = CGFloat(i) * totalBarWidth
                     let spatialPhase = Double(i) * 0.25
                     let spectrumIndex = (i * spectrumCount) / numBars
-                    let localFreq = CGFloat(audioPlayer.spectrumData[min(spectrumIndex, spectrumCount - 1)])
+                    let localFreq = CGFloat(SpectrumBuffer.shared.spectrumData[min(spectrumIndex, spectrumCount - 1)])
                     
                     // Complex Wave Math
                     let veryFast = sin(wavePhase * 2.5 + Double(i) * 0.1) * 0.35

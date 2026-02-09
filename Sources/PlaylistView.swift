@@ -3,7 +3,9 @@ import UniformTypeIdentifiers
 
 struct PlaylistView: View {
     @EnvironmentObject var playlistManager: PlaylistManager
-    @EnvironmentObject var audioPlayer: AudioPlayer
+    //@EnvironmentObject var audioPlayer: AudioPlayer
+    @StateObject private var timeBuffer = PlaybackTimeBuffer.shared    
+//
     @State private var selectedTracks: Set<Track.ID> = [] 
     @State private var lastClickedIndex: Int? = nil      // New tracker for Shift+Click range selection
     @State private var tapTimer: Timer?
@@ -287,7 +289,7 @@ struct PlaylistView: View {
             HStack(spacing: 0) {
                 // Left side - time display
                 MiniTimerView(
-                    currentTime: audioPlayer.currentTime,
+                    currentTime: timeBuffer.currentTime,
                     totalDuration: totalDuration
                 )
                 

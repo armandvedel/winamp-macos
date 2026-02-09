@@ -51,7 +51,6 @@ struct MainPlayerView: View {
                             .buttonStyle(.plain)
                             
                             TimerDisplayView(
-                                currentTime: audioPlayer.currentTime,
                                 duration: audioPlayer.duration,
                                 showRemainingTime: $showRemainingTime
                             )
@@ -292,7 +291,6 @@ struct MainPlayerView: View {
                 
                 // Large progress bar with 3D inset effect
                 WinampProgressBar(
-                    currentTime: audioPlayer.currentTime,
                     duration: audioPlayer.duration,
                     seekDragging: $seekDragging,
                     seekDragPercent: $seekDragPercent,
@@ -412,12 +410,12 @@ struct WinampLogoButton: View {
 }
 
 struct TimerDisplayView: View {
-    let currentTime: TimeInterval
+    @StateObject private var timeBuffer = PlaybackTimeBuffer.shared
     let duration: TimeInterval
     @Binding var showRemainingTime: Bool
     
     var body: some View {
-        Text(formatTime(showRemainingTime ? -(duration - currentTime) : currentTime, 
+        Text(formatTime(showRemainingTime ? -(duration - timeBuffer.currentTime) : timeBuffer.currentTime, 
                         showNegative: showRemainingTime))
             .font(.system(size: 22, weight: .bold, design: .monospaced))
             .foregroundColor(WinampColors.displayText)
@@ -443,7 +441,7 @@ struct TimerDisplayView: View {
 
 struct WinampProgressBar: View {
     // Pass the specific values needed for the UI
-    let currentTime: TimeInterval
+    @StateObject private var timeBuffer = PlaybackTimeBuffer.shared
     let duration: TimeInterval
     
     // Use @Binding for the dragging state if you need the parent to know, 
@@ -480,7 +478,7 @@ struct WinampProgressBar: View {
                     .drawingGroup()
                 
                 // 2. Progress fill
-                let progress = seekDragging ? seekDragPercent : (currentTime / max(duration, 1))
+                let progress = seekDragging ? seekDragPercent : (timeBuffer.currentTime / max(duration, 1))
                 
                 RoundedRectangle(cornerRadius: 7)
                     .fill(
@@ -720,6 +718,7 @@ enum WindowControlAction {
 // Shade mode view - compact view with just spectrum, time, and song name
 struct ShadeView: View {
     @EnvironmentObject var audioPlayer: AudioPlayer
+    @StateObject private var timeBuffer = PlaybackTimeBuffer.shared
     @EnvironmentObject var playlistManager: PlaylistManager
     @Binding var isShadeMode: Bool
     @Binding var songDisplayMode: DisplayMode
@@ -771,7 +770,7 @@ struct ShadeView: View {
                 }
                 
                 // Time display with 3D inset
-                Text(formatTime(showRemainingTime ? -(audioPlayer.duration - audioPlayer.currentTime) : audioPlayer.currentTime, showNegative: showRemainingTime))
+                Text(formatTime(showRemainingTime ? -(audioPlayer.duration - timeBuffer.currentTime) : timeBuffer.currentTime, showNegative: showRemainingTime))
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(WinampColors.displayText)
                     .shadow(color: WinampColors.displayText.opacity(0.5), radius: 2, x: 0, y: 0)
@@ -1248,36 +1247,6 @@ struct WinampToggle: View {
 }
 
 
-struct TimeDisplayView: View {
-    @EnvironmentObject var audioPlayer: AudioPlayer
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(formatTime(audioPlayer.currentTime))
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundColor(WinampColors.displayText)
-                .frame(width: 50, alignment: .trailing)
-            
-            Text("/")
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundColor(WinampColors.displayText.opacity(0.5))
-            
-            Text(formatTime(audioPlayer.duration))
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundColor(WinampColors.displayText.opacity(0.7))
-                .frame(width: 50, alignment: .leading)
-        }
-        .padding(6)
-        .background(WinampColors.displayBg)
-        .cornerRadius(2)
-    }
-    
-    private func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-}
 
 struct VolumeControlView: View {
     @EnvironmentObject var audioPlayer: AudioPlayer
@@ -1304,14 +1273,16 @@ struct VolumeControlView: View {
 }
 
 struct PositionSliderView: View {
+    @StateObject private var timeBuffer = PlaybackTimeBuffer.shared
     @EnvironmentObject var audioPlayer: AudioPlayer
+
     @State private var isDragging = false
     @State private var dragValue: Double = 0
     
     var body: some View {
         Slider(
             value: isDragging ? $dragValue : Binding(
-                get: { audioPlayer.currentTime },
+                get: { timeBuffer.currentTime },
                 set: { _ in }
             ),
             in: 0...max(audioPlayer.duration, 1),
@@ -1927,7 +1898,8 @@ class DoubleClickView: NSView {
 
 // Separate canvas view to avoid compiler timeout
 struct MilkdropCanvas: View {
-    let audioPlayer: AudioPlayer
+    @ObservedObject var audioPlayer: AudioPlayer
+    @StateObject private var timeBuffer = PlaybackTimeBuffer.shared    
     let time: Double
     let trackTitle: String
     let trackChangeTime: Date
@@ -2003,7 +1975,7 @@ struct MilkdropCanvas: View {
     }
     
     private func drawSpiralGalaxy(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
-        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let avgLevel = SpectrumBuffer.shared.spectrumData.reduce(0, +) / Float(max(SpectrumBuffer.shared.spectrumData.count, 1))
         let intensity = CGFloat(avgLevel) * 2 + 0.5
         
         // Multiple spiral arms
@@ -2028,7 +2000,7 @@ struct MilkdropCanvas: View {
     
     private func drawEnergyRings(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, time: Double) {
         // Pulsing concentric rings based on spectrum
-        for (index, level) in audioPlayer.spectrumData.prefix(12).enumerated() {
+        for (index, level) in SpectrumBuffer.shared.spectrumData.prefix(12).enumerated() {
             let angle = Double(index) / 12.0 * .pi * 2 + time * 0.4
             let baseDist: CGFloat = 120
             let dist = baseDist + CGFloat(level) * 180
@@ -2060,8 +2032,8 @@ struct MilkdropCanvas: View {
             
             for x in stride(from: 0, through: size.width, by: 4) {
                 let progress = x / size.width
-                let spectrumIndex = Int(progress * Double(audioPlayer.spectrumData.count))
-                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                let spectrumIndex = Int(progress * Double(SpectrumBuffer.shared.spectrumData.count))
+                let level = spectrumIndex < SpectrumBuffer.shared.spectrumData.count ? SpectrumBuffer.shared.spectrumData[spectrumIndex] : 0
                 
                 let wavePhase = time * (1.5 + Double(layer) * 0.5)
                 let y = yOffset + amplitude * CGFloat(level) * sin(x / 40 + wavePhase)
@@ -2078,7 +2050,7 @@ struct MilkdropCanvas: View {
     
     private func drawParticles(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, time: Double) {
         // Floating particles that react to music
-        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let avgLevel = SpectrumBuffer.shared.spectrumData.reduce(0, +) / Float(max(SpectrumBuffer.shared.spectrumData.count, 1))
         
         for i in 0..<80 {
             let seed = Double(i) * 17.3
@@ -2214,8 +2186,8 @@ struct MilkdropCanvas: View {
                 let x = CGFloat(col) * cellWidth + cellWidth / 2
                 let y = CGFloat(row) * cellHeight + cellHeight / 2
                 
-                let spectrumIndex = (col * audioPlayer.spectrumData.count) / cols
-                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                let spectrumIndex = (col * SpectrumBuffer.shared.spectrumData.count) / cols
+                let level = spectrumIndex < SpectrumBuffer.shared.spectrumData.count ? SpectrumBuffer.shared.spectrumData[spectrumIndex] : 0
                 
                 let phase = time + Double(row) * 0.5 + Double(col) * 0.3
                 let wave = sin(phase * 3) * CGFloat(level) * 0.5 + 0.5
@@ -2232,7 +2204,7 @@ struct MilkdropCanvas: View {
     
     // MARK: - Plasma Field Visualization
     private func drawPlasmaField(context: inout GraphicsContext, size: CGSize, time: Double) {
-        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let avgLevel = SpectrumBuffer.shared.spectrumData.reduce(0, +) / Float(max(SpectrumBuffer.shared.spectrumData.count, 1))
         let speed = time * (0.5 + Double(avgLevel))
         
         for y in stride(from: 0, to: size.height, by: 8) {
@@ -2260,8 +2232,8 @@ struct MilkdropCanvas: View {
     private func drawParticleStorm(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
         for i in 0..<200 {
             let seed = Double(i) * 23.7
-            let spectrumIndex = i % audioPlayer.spectrumData.count
-            let level = audioPlayer.spectrumData[spectrumIndex]
+            let spectrumIndex = i % SpectrumBuffer.shared.spectrumData.count
+            let level = SpectrumBuffer.shared.spectrumData[spectrumIndex]
             
             let angle = time * 2 + seed
             let speed = 1.0 + Double(level) * 3
@@ -2281,11 +2253,11 @@ struct MilkdropCanvas: View {
     
     // MARK: - Frequency Rings Visualization
     private func drawFrequencyRings(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, time: Double) {
-        for (index, level) in audioPlayer.spectrumData.enumerated() {
+        for (index, level) in SpectrumBuffer.shared.spectrumData.enumerated() {
             let radius = CGFloat(index) * 15 + 50 + CGFloat(level) * 80
             let thickness: CGFloat = 4 + CGFloat(level) * 10
             
-            let hue = Double(index) / Double(audioPlayer.spectrumData.count)
+            let hue = Double(index) / Double(SpectrumBuffer.shared.spectrumData.count)
             let color = Color(hue: hue, saturation: 1.0, brightness: Double(level) * 0.8 + 0.2)
             
             var path = Path()
@@ -2306,8 +2278,8 @@ struct MilkdropCanvas: View {
             
             for i in 0...segments {
                 let angle = (Double(i) / Double(segments)) * .pi * 2
-                let spectrumIndex = (i * audioPlayer.spectrumData.count) / segments
-                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                let spectrumIndex = (i * SpectrumBuffer.shared.spectrumData.count) / segments
+                let level = spectrumIndex < SpectrumBuffer.shared.spectrumData.count ? SpectrumBuffer.shared.spectrumData[spectrumIndex] : 0
                 
                 let wave = CGFloat(level) * 50 * (1.0 - depth)
                 let r = radius + wave
@@ -2344,8 +2316,8 @@ struct MilkdropCanvas: View {
             
             for i in 0..<50 {
                 let t = Double(i) / 50.0
-                let spectrumIndex = (i * audioPlayer.spectrumData.count) / 50
-                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                let spectrumIndex = (i * SpectrumBuffer.shared.spectrumData.count) / 50
+                let level = spectrumIndex < SpectrumBuffer.shared.spectrumData.count ? SpectrumBuffer.shared.spectrumData[spectrumIndex] : 0
                 
                 let r = t * 300
                 let angle = t * .pi * 4 + time
@@ -2364,7 +2336,7 @@ struct MilkdropCanvas: View {
     
     // MARK: - LFO Morph Visualization
     private func drawLFOMorph(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
-        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let avgLevel = SpectrumBuffer.shared.spectrumData.reduce(0, +) / Float(max(SpectrumBuffer.shared.spectrumData.count, 1))
         
         // LFO modulators
         let lfo1 = sin(time * 0.5) * 0.5 + 0.5
@@ -2380,8 +2352,8 @@ struct MilkdropCanvas: View {
             
             for i in 0...segments {
                 let angle = (Double(i) / Double(segments)) * .pi * 2
-                let spectrumIndex = (i * audioPlayer.spectrumData.count) / segments
-                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                let spectrumIndex = (i * SpectrumBuffer.shared.spectrumData.count) / segments
+                let level = spectrumIndex < SpectrumBuffer.shared.spectrumData.count ? SpectrumBuffer.shared.spectrumData[spectrumIndex] : 0
                 
                 let morph1 = sin(angle * 3 + time * lfo1) * lfo2 * 50
                 let morph2 = cos(angle * 5 + time * lfo3) * lfo1 * 30
@@ -2407,7 +2379,7 @@ struct MilkdropCanvas: View {
     
     // MARK: - Nebula Galaxy Visualization
     private func drawNebulaGalaxy(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
-        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let avgLevel = SpectrumBuffer.shared.spectrumData.reduce(0, +) / Float(max(SpectrumBuffer.shared.spectrumData.count, 1))
         
         // Draw background star field
         drawStarField(context: &context, size: size, time: time)
@@ -2453,8 +2425,8 @@ struct MilkdropCanvas: View {
                 let x = centerX + cos(angle) * distance
                 let y = centerY + sin(angle) * distance * 0.7  // Flatten for galaxy shape
                 
-                let spectrumIndex = i % audioPlayer.spectrumData.count
-                let level = audioPlayer.spectrumData[spectrumIndex]
+                let spectrumIndex = i % SpectrumBuffer.shared.spectrumData.count
+                let level = SpectrumBuffer.shared.spectrumData[spectrumIndex]
                 
                 let cloudSize = 15 + CGFloat(level) * 30 + CGFloat(layer) * 10
                 
@@ -2511,8 +2483,8 @@ struct MilkdropCanvas: View {
                 let spiralAngle = t * .pi * 4 + rotation + armAngleOffset
                 let spiralDistance = t * min(size.width, size.height) * 0.45
                 
-                let spectrumIndex = (i * audioPlayer.spectrumData.count) / 150
-                let level = spectrumIndex < audioPlayer.spectrumData.count ? audioPlayer.spectrumData[spectrumIndex] : 0
+                let spectrumIndex = (i * SpectrumBuffer.shared.spectrumData.count) / 150
+                let level = spectrumIndex < SpectrumBuffer.shared.spectrumData.count ? SpectrumBuffer.shared.spectrumData[spectrumIndex] : 0
                 
                 // Add some randomness to star positions
                 let noise = sin(Double(i) * 13.7 + Double(arm) * 7.3) * 10
@@ -2578,16 +2550,16 @@ struct MilkdropCanvas: View {
     
     // MARK: - Starfield Flight Visualization
     private func drawStarfieldFlight(context: inout GraphicsContext, centerX: CGFloat, centerY: CGFloat, size: CGSize, time: Double) {
-        let avgLevel = audioPlayer.spectrumData.reduce(0, +) / Float(max(audioPlayer.spectrumData.count, 1))
+        let avgLevel = SpectrumBuffer.shared.spectrumData.reduce(0, +) / Float(max(SpectrumBuffer.shared.spectrumData.count, 1))
         
         // Calculate rotation angle based on frequency bands
         // Low frequencies (bass) rotate left, high frequencies rotate right
-        let spectrumCount = audioPlayer.spectrumData.count
+        let spectrumCount = SpectrumBuffer.shared.spectrumData.count
         let lowEnd = spectrumCount / 3
         let highStart = (spectrumCount * 2) / 3
         
-        let lowFreqs = audioPlayer.spectrumData.prefix(lowEnd)
-        let highFreqs = audioPlayer.spectrumData.suffix(spectrumCount - highStart)
+        let lowFreqs = SpectrumBuffer.shared.spectrumData.prefix(lowEnd)
+        let highFreqs = SpectrumBuffer.shared.spectrumData.suffix(spectrumCount - highStart)
         
         let lowAvg = lowFreqs.reduce(0, +) / Float(max(lowFreqs.count, 1))
         let highAvg = highFreqs.reduce(0, +) / Float(max(highFreqs.count, 1))
@@ -2645,8 +2617,8 @@ struct MilkdropCanvas: View {
             let trailEndY = screenY - (directionY / distance) * trailLength
             
             // Star color - spectrum-reactive
-            let spectrumIndex = i % audioPlayer.spectrumData.count
-            let level = audioPlayer.spectrumData[spectrumIndex]
+            let spectrumIndex = i % SpectrumBuffer.shared.spectrumData.count
+            let level = SpectrumBuffer.shared.spectrumData[spectrumIndex]
             
             let hue = 0.55 + Double(level) * 0.35
             let saturation = 0.15 + Double(level) * 0.6
@@ -2794,7 +2766,7 @@ struct MilkdropCanvas: View {
         }
         
         // Find current lyric and surrounding context
-        let currentTime = audioPlayer.currentTime
+        let currentTime = timeBuffer.currentTime
         var displayLines: [String] = []
         
         // Get current and upcoming lyrics

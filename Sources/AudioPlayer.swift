@@ -8,13 +8,13 @@ class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
     
     @Published var isPlaying = false
-    @Published var currentTime: TimeInterval = 0
+    private var currentTime: TimeInterval = 0
     private var latestCurrentTime: TimeInterval = 0
     
     @Published var duration: TimeInterval = 0
     @Published var volume: Float = 0.75
     @Published var currentTrack: Track?
-    @Published var spectrumData: [Float] = Array(repeating: 0, count: 15)
+    private var spectrumData: [Float] = Array(repeating: 0, count: 15)
     private var latestSpectrumData: [Float] = Array(repeating: 0, count: 15)
     @Published var currentLyrics: [LyricLine] = []
     @Published var currentLyricText: String?
@@ -463,8 +463,9 @@ class AudioPlayer: NSObject, ObservableObject {
         // Winamp visualizers typically run at 60fps (0.016s) or 30fps (0.033s)
         // If it's too fast, ensure this interval isn't set too low.
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.updateCurrentTime()
             self?.updateSpectrum()
+            self?.updateCurrentTime()
+            
         }
     }
 
@@ -502,6 +503,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 self.currentTime = newTime
                 self.updateCurrentLyric()
             }
+        PlaybackTimeBuffer.shared.update(time: currentTime)
         }
     }
     
@@ -589,11 +591,11 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     private func updateSpectrum() {
-        guard isPlaying else {
-            // Drop bars to zero immediately when stopped
-            spectrumData = Array(repeating: 0, count: 15)
-            return
-        }
+//        guard isPlaying else {
+//            // Drop bars to zero immediately when stopped
+//            spectrumData = Array(repeating: 0, count: 15)
+//            return
+//        }
 
         //let newData = (0..<15).map { _ in Float.random(in: 0...1) }
 
@@ -606,6 +608,8 @@ class AudioPlayer: NSObject, ObservableObject {
                 for i in 0..<self.spectrumData.count {
                     self.spectrumData[i] = (self.spectrumData[i] * 0.15) + (latestSpectrumData[i] * 0.85)
             }
+            let finalData = spectrumData 
+            SpectrumBuffer.shared.update(with: finalData)
         }
     }
     
@@ -648,3 +652,42 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 }
 
+class SpectrumBuffer: ObservableObject {
+    static let shared = SpectrumBuffer()
+    
+    // Nur Views, die explizit diesen Buffer beobachten, werden neu gezeichnet
+    @Published var spectrumData: [Float] = Array(repeating: 0, count: 15)
+    
+    private init() {}
+    
+    func update(with newData: [Float]) {
+        // Wir führen das Update auf dem Main-Thread aus, aber nur für diesen Buffer
+        DispatchQueue.main.async {
+            self.spectrumData = newData
+        }
+    }
+}
+
+/// A dedicated buffer to handle high-frequency time updates without refreshing the entire AudioPlayer observers.
+class PlaybackTimeBuffer: ObservableObject {
+    // Singleton instance for global access
+    static let shared = PlaybackTimeBuffer()
+    
+    // The only variable that triggers a UI refresh in observers
+    @Published var currentTime: TimeInterval = 0
+    
+    private init() {}
+    
+    /// Updates the current time on the main thread
+    /// - Parameter time: The new playback time from the audio engine
+    func update(time: TimeInterval) {
+        // Ensure UI updates happen on the main thread
+        DispatchQueue.main.async {
+            // Only trigger a refresh if the second has actually changed
+            // This prevents unnecessary redraws if the timer fires faster than 1s
+            if Int(self.currentTime) != Int(time) {
+                self.currentTime = time
+            }
+        }
+    }
+}

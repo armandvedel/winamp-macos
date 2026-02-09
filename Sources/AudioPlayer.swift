@@ -11,6 +11,8 @@ class AudioPlayer: NSObject, ObservableObject {
     private var currentTime: TimeInterval = 0
     private var latestCurrentTime: TimeInterval = 0
     
+    private var lastBufferUpdate: TimeInterval = 0
+    
     @Published var duration: TimeInterval = 0
     @Published var volume: Float = 0.75
     @Published var currentTrack: Track?
@@ -104,7 +106,11 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             return 
             }
-        self.processAudioBuffer(buffer) 
+            let currentTime = CACurrentMediaTime()
+            if currentTime - self.lastBufferUpdate > 0.033 {
+                self.lastBufferUpdate = currentTime
+                self.processAudioBuffer(buffer)
+            }
         }
         // ---------------------
 

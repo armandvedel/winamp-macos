@@ -13,6 +13,7 @@ struct PlaylistView: View {
     @State private var userInitiatedPlayback = false // Track if user clicked to play a song
     @State private var lastCurrentIndex = -1 // Track the last index to detect changes
     @State private var searchText = "" // Search filter text
+    @State private var filteredTracksState: [(index: Int, track: Track)] = []
     
     // Resizing state
     @Binding var playlistSize: CGSize
@@ -21,26 +22,14 @@ struct PlaylistView: View {
     @State private var dragStart: CGPoint = .zero
     @State private var hasLoadedGroupedState = false
     
-    // Filter tracks based on search text
-    var filteredTracks: [(index: Int, track: Track)] {
-        if searchText.isEmpty {
-            return Array(playlistManager.tracks.enumerated().map { ($0.offset, $0.element) })
-        }
-        
-        let lowercasedSearch = searchText.lowercased()
-        return playlistManager.tracks.enumerated().compactMap { index, track in
-            let matchesTitle = track.title.lowercased().contains(lowercasedSearch)
-            let matchesArtist = track.artist.lowercased().contains(lowercasedSearch)
-            return (matchesTitle || matchesArtist) ? (index, track) : nil
-        }
-    }
+
     
     // Group tracks by artist
     var groupedTracks: [(artist: String, tracks: [(index: Int, track: Track)])] {
         var artistDict: [String: [(Int, Track)]] = [:]
         
         // Use filtered tracks instead of all tracks
-        for (index, track) in filteredTracks {
+        for (index, track) in filteredTracksState {
             let artist = track.artist
             if artistDict[artist] == nil {
                 artistDict[artist] = []
@@ -205,7 +194,7 @@ struct PlaylistView: View {
                             }
                         } else {
                             // Flat view - all tracks (filtered)
-                            ForEach(filteredTracks, id: \.track.id) { indexedTrack in
+                            ForEach(filteredTracksState, id: \.track.id) { indexedTrack in
                                 Button(action: {
                                     let trackId = indexedTrack.track.id
                                     let trackIndex = indexedTrack.index
@@ -405,6 +394,16 @@ struct PlaylistView: View {
                 hasLoadedGroupedState = true
             }
         }
+        .onAppear {
+            updateFilteredAndGroupedTracks()
+        }
+        .onChange(of: searchText) { _ in
+            updateFilteredAndGroupedTracks()
+        }
+        // Falls sich die Tracks im Manager ändern, auch updaten:
+        .onChange(of: playlistManager.tracks) { _ in
+            updateFilteredAndGroupedTracks()
+        }
     }
     
     var totalDuration: TimeInterval {
@@ -427,6 +426,20 @@ struct PlaylistView: View {
         }
     }
     
+    private func updateFilteredAndGroupedTracks() {
+        if searchText.isEmpty {
+            filteredTracksState = Array(playlistManager.tracks.enumerated().map { ($0.offset, $0.element) })
+        } else {
+            let lowercasedSearch = searchText.lowercased()
+            filteredTracksState = playlistManager.tracks.enumerated().compactMap { index, track in
+                if track.title.lowercased().contains(lowercasedSearch) || 
+                   track.artist.lowercased().contains(lowercasedSearch) {
+                    return (index, track)
+                }
+                return nil
+            }
+        }
+    }
     func scrollToCurrentTrack(index: Int, proxy: ScrollViewProxy) {
         // Ensure the index is valid
         guard index >= 0 && index < playlistManager.tracks.count else { return }
@@ -532,7 +545,7 @@ struct PlaylistView: View {
     }
     // Add these inside PlaylistView
     private func navigatePlaylist(direction: Int) {
-        let tracks = filteredTracks
+        let tracks = filteredTracksState
         guard !tracks.isEmpty else { return }
 
         // Find where the "active" highlight is

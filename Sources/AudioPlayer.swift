@@ -51,7 +51,8 @@ class AudioPlayer: NSObject, ObservableObject {
     private var playerNode: AVAudioPlayerNode?
     private var audioFile: AVAudioFile?
     private var eqNode: AVAudioUnitEQ?
-    private var timer: Timer?
+    //private var timer: Timer?
+    private var playbackTimer: DispatchSourceTimer?
     private var shouldAutoAdvance = true
     private let audioQueue = DispatchQueue(label: "com.winamp.audio", qos: .userInteractive)
     
@@ -463,21 +464,31 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     
     private func startTimer() {
-        // CRITICAL: Stop any existing timer first
-        stopTimer()
+        // Stop any existing timer before starting a new one
+        playbackTimer?.cancel()
 
-        // Winamp visualizers typically run at 60fps (0.016s) or 30fps (0.033s)
-        // If it's too fast, ensure this interval isn't set too low.
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.updateSpectrum()
-            self?.updateCurrentTime()
-            
+        // Create the timer on the main queue because we are updating UI
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+
+        // repeating: 0.1 (10 times a second)
+        // leeway: 0.01 (10ms wiggle room for the OS)
+        timer.schedule(deadline: .now(), repeating: 0.1, leeway: .milliseconds(100))
+
+        timer.setEventHandler { [weak self] in
+            guard let self = self else { return }
+
+            // --- The Update Chain ---
+            self.updateSpectrum() 
+            self.updateCurrentTime()
         }
+
+        timer.resume()
+        self.playbackTimer = timer
     }
 
     private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+        playbackTimer?.cancel()
+        playbackTimer = nil
     }
 
     private func updateCurrentTime() {

@@ -289,7 +289,6 @@ struct PlaylistView: View {
             HStack(spacing: 0) {
                 // Left side - time display
                 MiniTimerView(
-                    currentTime: timeBuffer.currentTime,
                     totalDuration: totalDuration
                 )
                 
@@ -566,12 +565,12 @@ struct PlaylistView: View {
     }
 }
 struct MiniTimerView: View {
-    let currentTime: TimeInterval
     let totalDuration: TimeInterval
-    
+    @StateObject private var timeBuffer = PlaybackTimeBuffer.shared
+
     var body: some View {
         HStack(spacing: 4) {
-            Text(formatTime(currentTime))
+            Text(formatTime(timeBuffer.currentTime))
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(WinampColors.displayText)
                 .frame(width: 50, alignment: .trailing)

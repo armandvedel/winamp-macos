@@ -456,10 +456,14 @@ struct WinampProgressBar: View {
         GeometryReader { geo in
             let inset: CGFloat = 2
             let usableWidth = geo.size.width - inset * 2
+            let barHeight = geo.size.height - (inset * 2)
+            
             let progress = seekDragging
                 ? seekDragPercent
                 : (timeBuffer.currentTime / max(duration, 1))
-
+                
+            let currentWidth = barHeight + (usableWidth - barHeight) * CGFloat(progress)
+            
             ZStack(alignment: .leading) {
                 // 1. Inset background
                 RoundedRectangle(cornerRadius: 8)
@@ -494,7 +498,7 @@ struct WinampProgressBar: View {
                             endPoint: .bottom
                         )
                     )
-                    .frame(width: usableWidth * CGFloat(progress))
+                    .frame(width: currentWidth)
                     .overlay(
                         // Inner gradient stroke for the soft edge
                         RoundedRectangle(cornerRadius: 7)

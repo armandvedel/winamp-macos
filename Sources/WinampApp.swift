@@ -52,8 +52,6 @@ struct WinampApp: App {
 }
 
 struct RecentItemsView: View {
-    // We don't actually need to observe the manager here if we 
-    // just want to show what's in the system's "Recent" list.
     @State private var recentURLs: [URL] = []
 
     var body: some View {
@@ -69,12 +67,15 @@ struct RecentItemsView: View {
                 Divider()
                 Button("Clear Recent") {
                     NSDocumentController.shared.clearRecentDocuments(nil)
-                    recentURLs = [] // Clear local cache too
+                    recentURLs = [] 
                 }
             }
         }
+        // Force a refresh whenever a menu is opened
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            self.recentURLs = NSDocumentController.shared.recentDocumentURLs
+        }
         .onAppear {
-            // Only fetch once when the menu is actually opened/rendered
             self.recentURLs = NSDocumentController.shared.recentDocumentURLs
         }
     }

@@ -45,16 +45,44 @@ struct ClassicVisualizerView: View {
     }
 }
 
+class SpectrumProcessor: ObservableObject {
+    // @Published ensures the View refreshes when these change
+    @Published var smoothedHeights: [CGFloat] = Array(repeating: 0, count: 15)
+    @Published var peakHeights: [CGFloat] = Array(repeating: 0, count: 15)
+    
+    private var peakHoldTimer: [TimeInterval] = Array(repeating: 0, count: 15)
+    private let columns = 15
+    private let gravity: CGFloat = 1.5 // Amount peaks fall per frame
+
+    func update(with newData: [Float], totalHeight: CGFloat) {
+        let currentTimestamp = Date().timeIntervalSince1970
+        
+        for i in 0..<min(newData.count, columns) {
+            let targetHeight = CGFloat(newData[i]) * totalHeight
+            
+            // 1. Smooth the bars (Lerp-like smoothing)
+            smoothedHeights[i] = (smoothedHeights[i] * 0.7) + (targetHeight * 0.3)
+            
+            // 2. Handle Peaks
+            if targetHeight >= peakHeights[i] {
+                // New peak reached: hold it
+                peakHeights[i] = targetHeight
+                peakHoldTimer[i] = currentTimestamp + 0.5 // 0.5s hold time
+            } else if currentTimestamp > peakHoldTimer[i] {
+                // Hold time expired: apply gravity
+                peakHeights[i] = max(0, peakHeights[i] - gravity)
+            }
+        }
+    }
+}
+
 struct BarsVisualization: View {
-    //@EnvironmentObject var audioPlayer: AudioPlayer
     @ObservedObject private var spectrum = SpectrumBuffer.shared
+    
+    // StateObject ensures the processor lives as long as the view exists
+    @StateObject private var processor = SpectrumProcessor()
+    
     let size: CGSize
-    
-    // Move the state here so it lives and dies with this specific view
-    @State private var peakHeights: [CGFloat] = Array(repeating: 0, count: 15)
-    @State private var peakHoldTimer: [TimeInterval] = Array(repeating: 0, count: 15)
-    @State private var smoothedHeights: [CGFloat] = Array(repeating: 0, count: 15)
-    
     let columns = 15
     let barSpacing: CGFloat = 0.8
 
@@ -79,13 +107,16 @@ struct BarsVisualization: View {
 
             for col in 0..<columns {
                 let x = CGFloat(col) * (barWidth + barSpacing)
+                let scale: CGFloat = 0.75
 
-                let barHeight = col < smoothedHeights.count ? smoothedHeights[col] : 0
-                let peakHeight = col < peakHeights.count ? peakHeights[col] : 0
+                let barHeight = processor.smoothedHeights[col] * scale
+                let peakHeight = processor.peakHeights[col] * scale
 
+                // Bar Rect
                 let barRect = CGRect(x: x, y: canvasSize.height - barHeight, width: barWidth, height: barHeight)
                 barsPath.addRect(barRect)
 
+                // Peak Rect
                 if peakHeight > 2 {
                     let peakRect = CGRect(x: x, y: canvasSize.height - peakHeight - 1, width: barWidth, height: 2)
                     peaksPath.addRect(peakRect)
@@ -95,34 +126,16 @@ struct BarsVisualization: View {
             context.fill(barsPath, with: barGradient)
             context.fill(peaksPath, with: .color(.gray))
 
+            // Baseline
             var baselinePath = Path()
             baselinePath.move(to: CGPoint(x: 0, y: canvasSize.height - 2))
             baselinePath.addLine(to: CGPoint(x: canvasSize.width, y: canvasSize.height - 2))
             context.stroke(baselinePath, with: .color(Color(red: 0.2, green: 0.4, blue: 0.8)), style: StrokeStyle(lineWidth: 1, dash: [1, 3]))
         }
-        .drawingGroup()
-        .onChange(of: spectrum.spectrumData) { newData in
-            updatePeaks(newData: newData, height: size.height)
-        }
-    }
-
-    private func updatePeaks(newData: [Float], height: CGFloat) {
-        let gravity: CGFloat = 0.15 
-        let currentTimestamp = Date().timeIntervalSince1970
-
-        for i in 0..<min(newData.count, columns) {
-            let targetHeight = CGFloat(newData[i]) * height
-            
-            // Update Smooth Bars
-            smoothedHeights[i] = (smoothedHeights[i] * 0.7) + (targetHeight * 0.3)
-            
-            // Update Peaks
-            if targetHeight >= peakHeights[i] {
-                peakHeights[i] = targetHeight
-                peakHoldTimer[i] = currentTimestamp + 0.5 
-            } else if currentTimestamp > peakHoldTimer[i] {
-                peakHeights[i] = max(0, peakHeights[i] - gravity)
-            }
+        //.drawingGroup() // Keeps rendering on the GPU (Metal)
+        .onReceive(spectrum.$spectrumData) { newData in
+            // Use onReceive for better compatibility with ObservableObject
+            processor.update(with: newData, totalHeight: size.height)
         }
     }
 }

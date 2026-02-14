@@ -24,7 +24,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentSampleRate: Double = 44100
     @Published var currentChannels: Int = 2
     
-    private let fftSize = 256
+    private let fftSize = 512
 
     private lazy var log2n: vDSP_Length = {
         vDSP_Length(log2(Float(fftSize)))
@@ -39,10 +39,10 @@ class AudioPlayer: NSObject, ObservableObject {
         return w
     }()
     //
-    private var samplesBuffer = [Float](repeating: 0, count: 256)
-    private var realBuffer = [Float](repeating: 0, count: 512)
-    private var imagBuffer = [Float](repeating: 0, count: 512)
-    private var magsBuffer = [Float](repeating: 0, count: 512)
+    private lazy var samplesBuffer = [Float](repeating: 0, count: fftSize)
+    private lazy var realBuffer = [Float](repeating: 0, count: fftSize)
+    private lazy var imagBuffer = [Float](repeating: 0, count: fftSize)
+    private lazy var magsBuffer = [Float](repeating: 0, count: fftSize)
     
     private var frameCounter = 0
     private let framesPerUpdate = 2  // adjust to ~30–60Hz depending on buffer rate
@@ -99,7 +99,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let format = mixer.outputFormat(forBus: 0)
         
         // Install a tap to "hear" the audio for the visualizer
-        mixer.installTap(onBus: 0, bufferSize: 256, format: format) { [weak self] (buffer, _) in
+        mixer.installTap(onBus: 0, bufferSize: AVAudioFrameCount(fftSize), format: format) { [weak self] (buffer, _) in
             guard let self = self, self.isPlaying else { 
                 // Optional: Clear the visualizer when stopped
                 if self?.spectrumData.contains(where: { $0 > 0 }) == true {
@@ -571,14 +571,22 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         // Map to 15 log-spaced bands
+        // Tuned band edges (Hz)
+        let bandEdges: [Float] = [
+             80,   120,  180,  260,  360,
+            480,   620,  800, 1050, 1400,
+           1850,  2500, 3400, 4800, 7000,
+          11000    // last edge
+        ]
+
         var newData = [Float](repeating: 0, count: bins)
+
         for i in 0..<bins {
-            let lowCut: Float = 50
-            let f0 = lowCut * pow(nyquist / lowCut, Float(i) / Float(bins))
-            let f1 = lowCut * pow(nyquist / lowCut, Float(i+1) / Float(bins))
+            let f0 = bandEdges[i]
+            let f1 = bandEdges[i+1]
 
             let startBin = max(0, min(halfSize - 1, Int(f0 / nyquist * Float(halfSize))))
-            let endBin = max(startBin + 1, min(halfSize, Int(f1 / nyquist * Float(halfSize))))
+            let endBin   = max(startBin + 2, min(halfSize, Int(f1 / nyquist * Float(halfSize))))
             let count = endBin - startBin
 
             var sum: Float = 0
@@ -587,9 +595,11 @@ class AudioPlayer: NSObject, ObservableObject {
             }
 
             let amplitude = sqrt(sum / Float(count))
-            newData[i] = log10(1 + amplitude) * 0.5  // scaled down for visuals
-        }
 
+            // Slight nonlinear lift for low-level detail
+            newData[i] = log10(1 + amplitude * 2.5) * 0.6
+        }
+        
         // Smooth and publish
         frameCounter += 1
         if frameCounter < framesPerUpdate { return }  // skip this frame

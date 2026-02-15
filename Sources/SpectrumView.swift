@@ -55,22 +55,26 @@ class SpectrumProcessor: ObservableObject {
     private let gravity: CGFloat = 1.5 // Amount peaks fall per frame
 
     func update(with newData: [Float], totalHeight: CGFloat) {
+        // Call timestamp once outside the loop
         let currentTimestamp = Date().timeIntervalSince1970
-        
+
         for i in 0..<min(newData.count, columns) {
             let targetHeight = CGFloat(newData[i]) * totalHeight
-            
-            // 1. Smooth the bars (Lerp-like smoothing)
-            smoothedHeights[i] = (smoothedHeights[i] * 0.7) + (targetHeight * 0.3)
-            
-            // 2. Handle Peaks
+
+            // 1. REMOVE REDUNDANT SMOOTHING
+            // Just use the targetHeight directly since AudioPlayer already smoothed it.
+            smoothedHeights[i] = targetHeight
+
+            // 2. OPTIMIZED PEAK LOGIC
             if targetHeight >= peakHeights[i] {
-                // New peak reached: hold it
                 peakHeights[i] = targetHeight
-                peakHoldTimer[i] = currentTimestamp + 0.5 // 0.5s hold time
+                peakHoldTimer[i] = currentTimestamp + 0.5
             } else if currentTimestamp > peakHoldTimer[i] {
-                // Hold time expired: apply gravity
-                peakHeights[i] = max(0, peakHeights[i] - gravity)
+                // Apply gravity
+                let droppedHeight = peakHeights[i] - gravity
+                if peakHeights[i] > 0 {
+                    peakHeights[i] = max(0, droppedHeight)
+                }
             }
         }
     }

@@ -494,36 +494,23 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func updateCurrentTime() {
-        // 1. If we are mid-seek, do NOT let the timer update the time, 
-        // otherwise the slider will "fight" the user's mouse position.
-        guard !isSeeking else { return }
-
-        guard let player = playerNode else { return }
+        guard !isSeeking, let player = playerNode else { return }
 
         let sampleRate = audioFile?.fileFormat.sampleRate ?? 44100
         let newTime: TimeInterval
 
-        // 2. Try to get the high-precision time from the player node
         if let lastRenderTime = player.lastRenderTime,
            let playerTime = player.playerTime(forNodeTime: lastRenderTime) {
-
-            let elapsedSinceSeek = Double(playerTime.sampleTime) / sampleRate
-            newTime = self.seekOffset + elapsedSinceSeek
+            newTime = self.seekOffset + (Double(playerTime.sampleTime) / sampleRate)
         } else {
-            // FALLBACK: If the player is mid-transition, use the seekOffset 
-            // so the UI doesn't flicker back to 0:00.
             newTime = self.seekOffset
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            // Only update if the change is significant to avoid unnecessary UI redraws
-            if abs(self.latestCurrentTime - newTime) > 0.1 {
-                self.currentTime = newTime
-                self.updateCurrentLyric()
-            }
-        PlaybackTimeBuffer.shared.update(time: currentTime)
-        }
+        // Direct call. No Dispatch wrapper needed here because the Buffer handles it.
+        self.currentTime = newTime 
+        self.updateCurrentLyric() // This is fine to run at the timer's frequency
+
+        PlaybackTimeBuffer.shared.update(time: newTime)
     }
     
     private func updateCurrentLyric() {
@@ -607,38 +594,22 @@ class AudioPlayer: NSObject, ObservableObject {
         if frameCounter < framesPerUpdate { return }  // skip this frame
         frameCounter = 0
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            for i in 0..<min(self.latestSpectrumData.count, newData.count) {
-                let old = self.latestSpectrumData[i]
-                let new = newData[i]
+        for i in 0..<min(self.latestSpectrumData.count, newData.count) {
+            let old = self.latestSpectrumData[i]
+            let new = newData[i]
 
-                // Winamp Jitter logic: 15% old, 85% new
-                self.latestSpectrumData[i] = (old * 0.15) + (new * 0.85)
-            }
+            // Winamp Jitter logic: 15% old, 85% new
+            self.latestSpectrumData[i] = (old * 0.15) + (new * 0.85)
+
         }
     }
     
     private func updateSpectrum() {
-//        guard isPlaying else {
-//            // Drop bars to zero immediately when stopped
-//            spectrumData = Array(repeating: 0, count: 15)
-//            return
-//        }
-
-        //let newData = (0..<15).map { _ in Float.random(in: 0...1) }
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-
-            // 0.15 old data + 0.85 new data
-            // This is "faster by half" - it gives you that 
-            // jittery, chaotic Winamp energy without being a total blur.
-                for i in 0..<self.spectrumData.count {
-                    self.spectrumData[i] = (self.spectrumData[i] * 0.15) + (latestSpectrumData[i] * 0.85)
-            }
-            let finalData = spectrumData 
-            SpectrumBuffer.shared.update(with: finalData)
+        guard isPlaying else { return }
+        let finalData = self.latestSpectrumData 
+        DispatchQueue.main.async {
+        // Only this specific update needs the Main Thread
+        SpectrumBuffer.shared.update(with: finalData)
         }
     }
     

@@ -334,15 +334,17 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             // ---------------------------
  
+            // Inside play() -> audioQueue.async
             if !engine.isRunning {
                 do { try engine.start() } catch { return }
             }
-            self.shouldAutoAdvance = true
+
             player.stop()
             player.reset()
-            self.shouldAutoAdvance = true
 
-            player.scheduleFile(file, at: nil) { [weak self] in
+            // Use scheduleSegment instead of scheduleFile for better completion reliability
+            let frameCount = AVAudioFrameCount(file.length)
+            player.scheduleSegment(file, startingFrame: 0, frameCount: frameCount, at: nil) { [weak self] in
                 DispatchQueue.main.async {
                     self?.handleTrackCompletion()
                 }
